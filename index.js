@@ -67,6 +67,17 @@ async function getReviewHistories(limit = 20) {
   }));
 }
 
+async function approveReview(historyId) {
+  const docRef = db
+    .collection('reviewHistories')
+    .doc(historyId);
+
+  await docRef.update({
+    approved: true,
+    approvedAt: new Date()
+  });
+}
+
 // -------------------------
 // Utility
 // -------------------------
@@ -136,7 +147,6 @@ async function generateContentWithRetry(
       }
 
       return response;
-
     } catch (error) {
       lastError = error;
 
@@ -150,7 +160,6 @@ async function generateContentWithRetry(
         message.includes('RESOURCE_EXHAUSTED') ||
         message.includes('Resource exhausted');
 
-      // 429以外なら即エラー
       if (!is429) {
         logError('gemini_non_retryable_error', error, {
           attempt
@@ -159,7 +168,6 @@ async function generateContentWithRetry(
         throw error;
       }
 
-      // 最大回数まで試した場合
       if (attempt === maxRetries) {
         logError('gemini_retry_exhausted', error, {
           attempts: attempt + 1
@@ -168,12 +176,9 @@ async function generateContentWithRetry(
         throw error;
       }
 
-      // 指数バックオフ
-      // 1秒 → 2秒 → 4秒
       const waitMs =
         GEMINI_RETRY_BASE_MS * Math.pow(2, attempt);
 
-      // 少しだけランダムな待ち時間を追加
       const jitterMs =
         Math.floor(Math.random() * 500);
 
@@ -275,10 +280,121 @@ ${text}
 http('helloHttp', async (req, res) => {
 
   // -------------------------
+  // POST：人間による最終承認
+  // -------------------------
+
+  if (
+    req.method === 'POST' &&
+    req.path === '/approve'
+  ) {
+    try {
+      const historyId = req.body?.historyId;
+
+      if (!historyId) {
+        res.status(400).send(
+          '履歴IDがありません。'
+        );
+        return;
+      }
+
+      await approveReview(historyId);
+
+      logEvent('review_approved', {
+        historyId
+      });
+
+      res.set(
+        'Content-Type',
+        'text/html; charset=utf-8'
+      );
+
+      res.send(`
+        <!DOCTYPE html>
+        <html lang="ja">
+
+        <head>
+          <meta charset="UTF-8">
+          <title>承認完了</title>
+
+          <style>
+            body {
+              font-family: sans-serif;
+              max-width: 700px;
+              margin: 60px auto;
+              padding: 20px;
+            }
+
+            .approved {
+              background: #e8f5e9;
+              padding: 30px;
+              border-radius: 10px;
+            }
+
+            a {
+              display: inline-block;
+              margin-top: 25px;
+              margin-right: 20px;
+            }
+          </style>
+        </head>
+
+        <body>
+
+          <div class="approved">
+
+            <h1>
+              ✅ 最終承認しました
+            </h1>
+
+            <p>
+              AIが改善した文章を、
+              人間が最終確認して承認しました。
+            </p>
+
+            <p>
+              履歴ID：
+              <strong>
+                ${escapeHtml(historyId)}
+              </strong>
+            </p>
+
+          </div>
+
+          <a href="/">
+            新しい文章を評価する
+          </a>
+
+          <a href="/history">
+            過去の履歴を見る
+          </a>
+
+        </body>
+
+        </html>
+      `);
+
+    } catch (error) {
+      logError(
+        'review_approval_failed',
+        error
+      );
+
+      res.status(500).send(
+        `承認処理エラー: ${escapeHtml(error.message)}`
+      );
+    }
+
+    return;
+  }
+
+  // -------------------------
   // GET：履歴一覧
   // -------------------------
 
-  if (req.method === 'GET' && req.path === '/history') {
+  if (
+    req.method === 'GET' &&
+    req.path === '/history'
+  ) {
     try {
       const histories = await getReviewHistories(20);
 
@@ -322,6 +438,15 @@ http('helloHttp', async (req, res) => {
                 ${item.targetReached
                   ? '✅ 達成'
                   : '⚠️ 未達成'}
+              </strong>
+            </p>
+
+            <p>
+              最終承認：
+              <strong>
+                ${item.approved
+                  ? '✅ 承認済み'
+                  : '⏳ 未承認'}
               </strong>
             </p>
 
@@ -427,14 +552,13 @@ http('helloHttp', async (req, res) => {
       `);
 
     } catch (error) {
-
       logError(
         'history_load_failed',
         error
       );
 
       res.status(500).send(
-        `履歴取得エラー: ${error.message}`
+        `履歴取得エラー: ${escapeHtml(error.message)}`
       );
     }
 
@@ -548,16 +672,13 @@ http('helloHttp', async (req, res) => {
   // -------------------------
 
   if (req.method === 'POST') {
-
     const startedAt = Date.now();
 
     try {
-
       const originalText =
         req.body?.text;
 
       if (!originalText) {
-
         logEvent(
           'review_rejected',
           {
@@ -637,11 +758,9 @@ http('helloHttp', async (req, res) => {
         improvementCount <= MAX_IMPROVEMENTS;
         improvementCount++
       ) {
-
         if (
           review.score >= TARGET_SCORE
         ) {
-
           logEvent(
             'target_score_reached',
             {
@@ -739,7 +858,8 @@ http('helloHttp', async (req, res) => {
           finalScore,
           improvementCount:
             totalImprovements,
-          targetReached
+          targetReached,
+          approved: false
         });
 
       logEvent(
@@ -877,6 +997,25 @@ http('helloHttp', async (req, res) => {
               line-height: 1.7;
             }
 
+            .approve-form {
+              margin-top: 30px;
+            }
+
+            .approve-button {
+              padding: 15px 30px;
+              font-size: 17px;
+              font-weight: bold;
+              cursor: pointer;
+              border: none;
+              border-radius: 8px;
+              background: #0b57d0;
+              color: white;
+            }
+
+            .approve-button:hover {
+              opacity: 0.9;
+            }
+
             a {
               display: inline-block;
               margin-top: 20px;
@@ -923,6 +1062,27 @@ http('helloHttp', async (req, res) => {
           </div>
 
           ${historyHtml}
+
+          <form
+            method="POST"
+            action="/approve"
+            class="approve-form"
+          >
+
+            <input
+              type="hidden"
+              name="historyId"
+              value="${escapeHtml(historyId)}"
+            >
+
+            <button
+              type="submit"
+              class="approve-button"
+            >
+              ✅ この文章を最終承認する
+            </button>
+
+          </form>
 
           <a href="/">
             もう一度評価する
