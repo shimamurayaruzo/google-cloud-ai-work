@@ -1,0 +1,76 @@
+{
+ "kicker": "見守りエージェント / 認知症の母と暮らす家のための入門",
+ "title": "iPadの見守りエージェントが日中の母に声をかけ、夕方には家族へ「今日の様子」を届ける",
+ "conclusion": "働きながら自宅で親を介護する家族のために作る仕組みです。日中は母の部屋のiPadが決まった時間に声をかけ、返事を記録します。夕方に家族のLINEへ**今日の様子**が届き、緊急のときは**すぐ**知らせます。医師やケアマネジャーへの共有は、**家族が承認**してからだけ行います。",
+ "three_lines": [
+  "市販の見守り製品は「動いたか」を見ますが、この仕組みは**会話の中身**から一日の様子を知ります。",
+  "同じ質問の繰り返しや無反応が続けば、自分で気づいて家族に**確認してほしい**と知らせます。",
+  "家族へは自動、外への共有は承認後、本人に頼まれても外へは連絡しない、の**3段階**で動きます。"
+ ],
+ "hero": {
+  "src": "hero.svg",
+  "alt": "見守りエージェントの全体像。母の部屋のiPadが声をかけ、返事をまとめて家族のスマホへ届ける。医師やケアマネへの共有は家族が承認してから",
+  "caption": "全体像。左が母の部屋、中央がエージェント、右が家族。外への共有だけ家族の承認を通る。",
+  "width": 1200,
+  "height": 440
+ },
+ "sections": [
+  {
+   "heading": "困りごと：日中ひとりの母の様子が分からない",
+   "body": [
+    "自宅に認知症の母がいて、家族は日中、仕事で家を空けます。ちゃんと食べたか、薬を飲んだか、着替えができたかが分かりません。同じ質問の繰り返しが増えているのかも、毎日見ていると逆に分からなくなります。",
+    "市販の見守り製品は、動いたか、映ったか、押したか、を家族に伝えます。生きているかは分かりますが、何を話し、どんな様子だったかは残りません。受診やケアマネジャーの面談で「最近どうですか」と聞かれても、家族はうまく答えられません。"
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 700 250\" role=\"img\" aria-label=\"市販の見守り製品は動いたか押したかを見る。見守りエージェントは会話の中身からどう過ごしたかを知る\"><defs><marker id=\"arrowOne\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0,0 L10,5 L0,10 z\" fill=\"var(--muted)\"/></marker></defs><g font-family=\"IBM Plex Sans JP, Hiragino Kaku Gothic ProN, sans-serif\" font-size=\"11.5\"><rect x=\"10\" y=\"10\" width=\"320\" height=\"230\" rx=\"8\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><text x=\"30\" y=\"36\" font-weight=\"700\" fill=\"var(--ink)\">市販の見守り製品</text><rect x=\"30\" y=\"52\" width=\"130\" height=\"34\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.35\"/><text x=\"95\" y=\"73\" text-anchor=\"middle\" fill=\"var(--ink)\">センサー：動いた</text><rect x=\"30\" y=\"96\" width=\"130\" height=\"34\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.35\"/><text x=\"95\" y=\"117\" text-anchor=\"middle\" fill=\"var(--ink)\">カメラ：映った</text><rect x=\"30\" y=\"140\" width=\"130\" height=\"34\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.35\"/><text x=\"95\" y=\"161\" text-anchor=\"middle\" fill=\"var(--ink)\">ボタン：押した</text><line x1=\"165\" y1=\"113\" x2=\"200\" y2=\"113\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowOne)\"/><rect x=\"205\" y=\"90\" width=\"110\" height=\"46\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--ink)\"/><text x=\"260\" y=\"109\" text-anchor=\"middle\" fill=\"var(--ink)\">分かること</text><text x=\"260\" y=\"126\" text-anchor=\"middle\" fill=\"var(--ink)\">生きているか</text><text x=\"30\" y=\"215\" fill=\"var(--muted)\">何を話し、どんな様子だったかは分からない</text><rect x=\"370\" y=\"10\" width=\"320\" height=\"230\" rx=\"8\" fill=\"var(--paper)\" stroke=\"var(--accent)\" stroke-width=\"1.5\"/><text x=\"390\" y=\"36\" font-weight=\"700\" fill=\"var(--ink)\">見守りエージェント</text><rect x=\"390\" y=\"52\" width=\"130\" height=\"34\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"455\" y=\"73\" text-anchor=\"middle\" fill=\"var(--paper)\">声をかける</text><rect x=\"390\" y=\"96\" width=\"130\" height=\"34\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"455\" y=\"117\" text-anchor=\"middle\" fill=\"var(--paper)\">返事を聞く</text><rect x=\"390\" y=\"140\" width=\"130\" height=\"34\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"455\" y=\"161\" text-anchor=\"middle\" fill=\"var(--paper)\">中身を記録する</text><line x1=\"525\" y1=\"113\" x2=\"560\" y2=\"113\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowOne)\"/><rect x=\"565\" y=\"90\" width=\"110\" height=\"46\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--ink)\"/><text x=\"620\" y=\"109\" text-anchor=\"middle\" fill=\"var(--ink)\">分かること</text><text x=\"620\" y=\"126\" text-anchor=\"middle\" fill=\"var(--ink)\">どう過ごしたか</text><text x=\"390\" y=\"215\" fill=\"var(--muted)\">食事、薬、着替え、気分、繰り返しの質問</text></g></svg>",
+   "fig_caption": "市販の製品が見るものと、この仕組みが知るものの違い。右側は会話の中身が材料になる。"
+  },
+  {
+   "heading": "一日の流れ：朝の計画、日中の声かけ、夕方の報告",
+   "body": [
+    "朝6時に、エージェントは家族が登録した予定（デイサービスや通院）を読みます。それをもとに、その日に声をかける時刻と内容を決めます。家族はLINEでその内容を見て承認し、母の部屋のiPadを一度タップします。その後の操作は要りません。",
+    "日中は決まった時間に声をかけ、返事を聞いて記録します。夕方18時に一日の会話をまとめ、家族のLINEに今日の様子として届けます。文ごとに、根拠になった会話へ飛べます。",
+    "「痛い」「転んだ」といった言葉や、声かけに2回続けて返事がないときは、すぐ家族に知らせます。同じ質問の繰り返しが何日も続くような変化は、緊急とは分けて「確認してほしい」と伝えます。"
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 700 290\" role=\"img\" aria-label=\"一日の流れ。朝に声かけの時刻と内容を決めて家族が承認し、日中は声かけと記録、夕方に今日の様子を届け、必要なときは緊急連絡か確認のお願いをする\"><defs><marker id=\"arrowTwo\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0,0 L10,5 L0,10 z\" fill=\"var(--muted)\"/></marker></defs><g font-family=\"IBM Plex Sans JP, Hiragino Kaku Gothic ProN, sans-serif\" font-size=\"11.5\"><rect x=\"10\" y=\"10\" width=\"160\" height=\"200\" rx=\"8\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><text x=\"90\" y=\"34\" text-anchor=\"middle\" font-weight=\"700\" fill=\"var(--ink)\">朝 6 時</text><rect x=\"180\" y=\"10\" width=\"160\" height=\"200\" rx=\"8\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><text x=\"260\" y=\"34\" text-anchor=\"middle\" font-weight=\"700\" fill=\"var(--ink)\">日中</text><rect x=\"350\" y=\"10\" width=\"160\" height=\"200\" rx=\"8\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><text x=\"430\" y=\"34\" text-anchor=\"middle\" font-weight=\"700\" fill=\"var(--ink)\">夕方 18 時</text><rect x=\"520\" y=\"10\" width=\"170\" height=\"200\" rx=\"8\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><text x=\"605\" y=\"34\" text-anchor=\"middle\" font-weight=\"700\" fill=\"var(--ink)\">必要なとき</text><rect x=\"25\" y=\"52\" width=\"130\" height=\"46\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"90\" y=\"71\" text-anchor=\"middle\" fill=\"var(--paper)\">予定を読み</text><text x=\"90\" y=\"88\" text-anchor=\"middle\" fill=\"var(--paper)\">声かけの時刻と内容を決める</text><line x1=\"90\" y1=\"100\" x2=\"90\" y2=\"122\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowTwo)\"/><rect x=\"25\" y=\"126\" width=\"130\" height=\"46\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--warn)\" stroke-width=\"1.5\"/><text x=\"90\" y=\"145\" text-anchor=\"middle\" fill=\"var(--ink)\">家族が計画を</text><text x=\"90\" y=\"162\" text-anchor=\"middle\" fill=\"var(--ink)\">承認して開始</text><line x1=\"157\" y1=\"112\" x2=\"192\" y2=\"112\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowTwo)\"/><rect x=\"195\" y=\"52\" width=\"130\" height=\"46\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"260\" y=\"71\" text-anchor=\"middle\" fill=\"var(--paper)\">決まった時間に</text><text x=\"260\" y=\"88\" text-anchor=\"middle\" fill=\"var(--paper)\">声をかける</text><line x1=\"260\" y1=\"100\" x2=\"260\" y2=\"122\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowTwo)\"/><rect x=\"195\" y=\"126\" width=\"130\" height=\"46\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"260\" y=\"145\" text-anchor=\"middle\" fill=\"var(--paper)\">返事を聞いて</text><text x=\"260\" y=\"162\" text-anchor=\"middle\" fill=\"var(--paper)\">記録する</text><line x1=\"327\" y1=\"112\" x2=\"362\" y2=\"112\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowTwo)\"/><rect x=\"365\" y=\"52\" width=\"130\" height=\"46\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"430\" y=\"71\" text-anchor=\"middle\" fill=\"var(--paper)\">一日の会話を</text><text x=\"430\" y=\"88\" text-anchor=\"middle\" fill=\"var(--paper)\">まとめる</text><line x1=\"430\" y1=\"100\" x2=\"430\" y2=\"122\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowTwo)\"/><rect x=\"365\" y=\"126\" width=\"130\" height=\"46\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--accent)\" stroke-width=\"1.5\"/><text x=\"430\" y=\"145\" text-anchor=\"middle\" fill=\"var(--ink)\">家族の LINE に</text><text x=\"430\" y=\"162\" text-anchor=\"middle\" fill=\"var(--ink)\">「今日の様子」</text><rect x=\"535\" y=\"52\" width=\"140\" height=\"46\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--err)\" stroke-width=\"1.5\"/><text x=\"605\" y=\"71\" text-anchor=\"middle\" fill=\"var(--err)\">「痛い」や無反応</text><text x=\"605\" y=\"88\" text-anchor=\"middle\" fill=\"var(--err)\">すぐ家族へ</text><rect x=\"535\" y=\"126\" width=\"140\" height=\"46\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--warn)\" stroke-width=\"1.5\"/><text x=\"605\" y=\"145\" text-anchor=\"middle\" fill=\"var(--warn)\">様子の変化が続く</text><text x=\"605\" y=\"162\" text-anchor=\"middle\" fill=\"var(--warn)\">確認してほしい</text><text x=\"20\" y=\"240\" fill=\"var(--muted)\">青：エージェントが自分で行う。橙：家族の判断を待つ。赤：緊急で即時に知らせる。</text><text x=\"20\" y=\"262\" fill=\"var(--muted)\">母の側の操作は不要。朝に家族が一度 iPad をタップすれば、あとは自動で回る。</text></g></svg>",
+   "fig_caption": "一日の流れ。青は自分で行う動き、橙は家族の判断を待つ場面、赤は緊急の連絡。"
+  },
+  {
+   "heading": "最初に解く一つ：朝の着替えの確認",
+   "body": [
+    "機能を並べる前に、家族が今いちばん困っている一つを確実に解きます。それが朝の着替えの確認です。着替えができたかを、会話の返事で確かめます。",
+    "声かけは責めない言葉で行い、呼び方も家族が決めます。返事があれば記録し、「まだ」や無反応なら少し置いてもう一度だけ声をかけます。それでも確認が取れないときだけ、家族に知らせます。",
+    "カメラは使いません。映像を撮らないので、着替えの姿が誰にも見られず、本人の言葉だけが材料になります。この流れが動けば、薬や水分の確認も同じ形で増やせます。"
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 700 250\" role=\"img\" aria-label=\"着替えの確認の流れ。声をかけて返事があれば記録し、返事がなければ少し置いてもう一度、それでも取れなければ家族に知らせる\"><defs><marker id=\"arrowThree\" viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" orient=\"auto\"><path d=\"M0,0 L10,5 L0,10 z\" fill=\"var(--muted)\"/></marker></defs><g font-family=\"IBM Plex Sans JP, Hiragino Kaku Gothic ProN, sans-serif\" font-size=\"11.5\"><rect x=\"15\" y=\"80\" width=\"140\" height=\"50\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"85\" y=\"101\" text-anchor=\"middle\" fill=\"var(--paper)\">朝の着替えの時間に</text><text x=\"85\" y=\"118\" text-anchor=\"middle\" fill=\"var(--paper)\">責めない言葉で声かけ</text><line x1=\"157\" y1=\"105\" x2=\"192\" y2=\"105\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowThree)\"/><rect x=\"195\" y=\"80\" width=\"120\" height=\"50\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--ink)\"/><text x=\"255\" y=\"101\" text-anchor=\"middle\" fill=\"var(--ink)\">返事を聞く</text><text x=\"255\" y=\"118\" text-anchor=\"middle\" fill=\"var(--ink)\">カメラは使わない</text><line x1=\"317\" y1=\"92\" x2=\"372\" y2=\"45\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowThree)\"/><text x=\"335\" y=\"58\" fill=\"var(--ok)\">「替えたよ」</text><rect x=\"375\" y=\"20\" width=\"140\" height=\"50\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--ok)\" stroke-width=\"1.5\"/><text x=\"445\" y=\"41\" text-anchor=\"middle\" fill=\"var(--ok)\">できた、と記録</text><text x=\"445\" y=\"58\" text-anchor=\"middle\" fill=\"var(--ok)\">夕方の報告に載る</text><line x1=\"317\" y1=\"118\" x2=\"372\" y2=\"165\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowThree)\"/><text x=\"322\" y=\"160\" fill=\"var(--warn)\">「まだ」や無反応</text><rect x=\"375\" y=\"140\" width=\"140\" height=\"50\" rx=\"5\" fill=\"var(--accent)\" opacity=\"0.6\"/><text x=\"445\" y=\"161\" text-anchor=\"middle\" fill=\"var(--paper)\">少し置いて</text><text x=\"445\" y=\"178\" text-anchor=\"middle\" fill=\"var(--paper)\">もう一度だけ声かけ</text><line x1=\"517\" y1=\"165\" x2=\"552\" y2=\"165\" stroke=\"var(--muted)\" stroke-width=\"1.5\" marker-end=\"url(#arrowThree)\"/><rect x=\"555\" y=\"140\" width=\"130\" height=\"50\" rx=\"5\" fill=\"var(--paper)\" stroke=\"var(--warn)\" stroke-width=\"1.5\"/><text x=\"620\" y=\"161\" text-anchor=\"middle\" fill=\"var(--warn)\">それでも取れなければ</text><text x=\"620\" y=\"178\" text-anchor=\"middle\" fill=\"var(--warn)\">家族に知らせる</text><text x=\"15\" y=\"225\" fill=\"var(--muted)\">2 回声をかけて確認が取れないときだけ家族に届く。毎回は届かないので、通知に慣れて無視することがない。</text></g></svg>",
+   "fig_caption": "着替えの確認の流れ。2回声をかけても取れないときだけ家族に届く。"
+  },
+  {
+   "heading": "外へ出す前に止まる：判断は人が握る",
+   "body": [
+    "自分で判断して動く仕組みほど、どこで止まるかを先に決めておく必要があります。この仕組みでは、外へ連絡する前に必ず止まり、家族に確かめます。止まる場所は、連絡の相手によって3段階に分けています。",
+    "家族への通知と夕方の報告は自動で送ります。医師やケアマネジャーへの共有は、家族が画面で中身を確かめてからだけ送ります。本人に「電話して」と頼まれても外へはかけず、家族に「こう頼まれました」と伝えます。",
+    "加えて、家族の画面には「今すぐ止める」ボタンと、この仕組みができること・できないことの一覧を置きます。音声は要約したあとに捨て、本人の言葉を丸ごとは残しません。"
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 700 220\" role=\"img\" aria-label=\"外への連絡の 3 段階。家族へは自動、医師やケアマネへは家族の承認後、本人に頼まれた外部連絡はしない\"><g font-family=\"IBM Plex Sans JP, Hiragino Kaku Gothic ProN, sans-serif\" font-size=\"11.5\"><rect x=\"10\" y=\"15\" width=\"680\" height=\"56\" rx=\"6\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><rect x=\"24\" y=\"30\" width=\"90\" height=\"26\" rx=\"13\" fill=\"var(--ok)\"/><text x=\"69\" y=\"47\" text-anchor=\"middle\" fill=\"var(--paper)\" font-weight=\"700\">自動</text><text x=\"130\" y=\"39\" fill=\"var(--ink)\">家族への通知、夕方の「今日の様子」、緊急の連絡</text><text x=\"130\" y=\"58\" fill=\"var(--muted)\">エージェントが判断して送る。根拠になった会話を添える</text><rect x=\"10\" y=\"83\" width=\"680\" height=\"56\" rx=\"6\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><rect x=\"24\" y=\"98\" width=\"90\" height=\"26\" rx=\"13\" fill=\"var(--warn)\"/><text x=\"69\" y=\"115\" text-anchor=\"middle\" fill=\"var(--paper)\" font-weight=\"700\">承認後</text><text x=\"130\" y=\"107\" fill=\"var(--ink)\">医師やケアマネジャーへの、直近の様子の共有</text><text x=\"130\" y=\"126\" fill=\"var(--muted)\">家族が画面で中身を確かめ、必要なら一文だけ直してから送る</text><rect x=\"10\" y=\"151\" width=\"680\" height=\"56\" rx=\"6\" fill=\"var(--paper-dim)\" stroke=\"var(--line)\"/><rect x=\"24\" y=\"166\" width=\"90\" height=\"26\" rx=\"13\" fill=\"var(--err)\"/><text x=\"69\" y=\"183\" text-anchor=\"middle\" fill=\"var(--paper)\" font-weight=\"700\">しない</text><text x=\"130\" y=\"175\" fill=\"var(--ink)\">本人に「電話して」と頼まれた外部への連絡</text><text x=\"130\" y=\"194\" fill=\"var(--muted)\">かけずに、家族へ「こう頼まれました」と伝えるだけ</text></g></svg>",
+   "fig_caption": "連絡の相手ごとの3段階。緑は自動、橙は家族の承認後、赤は行わない。"
+  }
+ ],
+ "callout": {
+  "label": "約束",
+  "text": "本人にカメラを向けない。本人を試す質問をしない。責めない。**外に出す判断は人が握る**。"
+ },
+ "appendix": {
+  "summary": "この説明で使った4つの言葉の意味",
+  "body": [
+   "エージェント：決められた手順をなぞるのではなく、状況を見て自分で判断して動くAIの仕組み。",
+   "今日の様子：夕方に家族へ届く一日のまとめ。文ごとに根拠の会話へ飛べる。",
+   "確認してほしい：緊急ではないが、家族に確認を促す知らせ。断定はしない。",
+   "承認：医師やケアマネジャーへ共有する前に、家族が中身を確かめて許可すること。"
+  ]
+ },
+ "meta": {
+  "date": "2026-09-22",
+  "source": "docs/01_企画書.md（同じリポジトリ内の企画書）",
+  "author": "島村"
+ }
+}
