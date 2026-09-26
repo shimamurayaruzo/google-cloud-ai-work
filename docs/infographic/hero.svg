@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" role="img" aria-label="見守りエージェントの全体像。母の部屋の iPad が声をかけ、返事をエージェントがまとめて家族のスマホへ届ける。医師やケアマネへの共有は家族が承認してから">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64707C"/>
+    </marker>
+    <marker id="ahr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#DC2626"/>
+    </marker>
+    <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#D97706"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="440" fill="#FFFFFF"/>
+  <g font-family="IBM Plex Sans JP, Hiragino Kaku Gothic ProN, Yu Gothic, sans-serif">
+    <text x="40" y="44" font-size="22" font-weight="700" fill="#212529">見守りエージェント</text>
+    <text x="40" y="68" font-size="12.5" fill="#64707C">認知症の母と暮らす家で、日中の声かけと夕方の報告を引き受ける仕組み</text>
+
+    <!-- 左: 母の部屋 -->
+    <rect x="40" y="100" width="300" height="300" rx="10" fill="#F6F8FA" stroke="#DEE2E6"/>
+    <text x="60" y="128" font-size="12.5" font-weight="700" fill="#212529">母の部屋</text>
+    <!-- iPad -->
+    <rect x="70" y="150" width="150" height="200" rx="12" fill="#FFFFFF" stroke="#212529" stroke-width="2"/>
+    <rect x="82" y="164" width="126" height="172" rx="6" fill="#2563EB" opacity="0.35"/>
+    <circle cx="118" cy="232" r="10" fill="#212529"/>
+    <circle cx="172" cy="232" r="10" fill="#212529"/>
+    <path d="M118 278 Q145 300 172 278" stroke="#212529" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <text x="145" y="368" font-size="11.5" text-anchor="middle" fill="#212529">iPad の顔が話しかける</text>
+    <!-- 母 -->
+    <circle cx="285" cy="215" r="20" fill="#FFFFFF" stroke="#212529" stroke-width="2"/>
+    <path d="M250 300 Q285 240 320 300 Z" fill="#FFFFFF" stroke="#212529" stroke-width="2"/>
+    <text x="285" y="330" font-size="11.5" text-anchor="middle" fill="#212529">母（日中ひとり）</text>
+
+    <!-- 中央: エージェント -->
+    <rect x="450" y="100" width="300" height="300" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="2"/>
+    <text x="600" y="130" font-size="13.5" font-weight="700" text-anchor="middle" fill="#212529">見守りエージェント</text>
+    <text x="600" y="148" font-size="11" text-anchor="middle" fill="#64707C">自分で判断して動く AI の仕組み</text>
+    <rect x="475" y="170" width="250" height="44" rx="6" fill="#2563EB" opacity="0.35"/>
+    <text x="600" y="197" font-size="12" text-anchor="middle" fill="#212529">決まった時間に声をかけ、返事を聞く</text>
+    <rect x="475" y="226" width="250" height="44" rx="6" fill="#2563EB" opacity="0.35"/>
+    <text x="600" y="253" font-size="12" text-anchor="middle" fill="#212529">一日の様子をまとめる</text>
+    <rect x="475" y="282" width="250" height="44" rx="6" fill="#2563EB" opacity="0.35"/>
+    <text x="600" y="309" font-size="12" text-anchor="middle" fill="#212529">いつもと違う兆候に気づく</text>
+    <rect x="475" y="338" width="250" height="44" rx="6" fill="#FFFFFF" stroke="#DC2626"/>
+    <text x="600" y="365" font-size="12" text-anchor="middle" fill="#DC2626">本人に頼まれても、外へは連絡しない</text>
+
+    <!-- 右: 家族 -->
+    <rect x="860" y="100" width="300" height="170" rx="10" fill="#F6F8FA" stroke="#DEE2E6"/>
+    <text x="880" y="128" font-size="12.5" font-weight="700" fill="#212529">家族のスマホ（仕事中）</text>
+    <rect x="890" y="145" width="240" height="40" rx="6" fill="#FFFFFF" stroke="#2563EB"/>
+    <text x="1010" y="170" font-size="12" text-anchor="middle" fill="#212529">夕方に「今日の様子」が届く</text>
+    <rect x="890" y="200" width="240" height="40" rx="6" fill="#FFFFFF" stroke="#DC2626"/>
+    <text x="1010" y="225" font-size="12" text-anchor="middle" fill="#DC2626">緊急のときは、すぐ知らせる</text>
+
+    <!-- 右下: 医師・ケアマネ -->
+    <rect x="860" y="320" width="300" height="80" rx="10" fill="#F6F8FA" stroke="#DEE2E6"/>
+    <text x="880" y="348" font-size="12.5" font-weight="700" fill="#212529">医師・ケアマネジャー</text>
+    <text x="880" y="372" font-size="11.5" fill="#64707C">受診や面談で使う、直近の様子のまとめ</text>
+
+    <!-- 矢印: iPad と エージェント -->
+    <line x1="450" y1="190" x2="345" y2="190" stroke="#64707C" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="397" y="182" font-size="11" text-anchor="middle" fill="#64707C">声かけ</text>
+    <line x1="345" y1="250" x2="448" y2="250" stroke="#64707C" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="397" y="270" font-size="11" text-anchor="middle" fill="#64707C">返事</text>
+
+    <!-- 矢印: エージェント と 家族 -->
+    <line x1="752" y1="165" x2="858" y2="165" stroke="#64707C" stroke-width="2" marker-end="url(#ah)"/>
+    <line x1="752" y1="220" x2="858" y2="220" stroke="#DC2626" stroke-width="2" marker-end="url(#ahr)"/>
+
+    <!-- 矢印: 家族 → 医師 (承認) -->
+    <line x1="1010" y1="272" x2="1010" y2="318" stroke="#D97706" stroke-width="2" marker-end="url(#ahw)"/>
+    <rect x="1030" y="280" width="120" height="24" rx="12" fill="#FFFFFF" stroke="#D97706"/>
+    <text x="1090" y="296" font-size="11" text-anchor="middle" fill="#D97706">家族が承認してから</text>
+  </g>
+</svg>
