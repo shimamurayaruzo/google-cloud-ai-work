@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>見守りエージェント 全体像</title>
+<style>html,body{margin:0;background:#fff}svg{display:block}</style></head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820" role="img" aria-label="見守りエージェントの全体像。母の部屋のiPad、サーバー、家族のLINE、運用のSlack、医師・ケアマネの関係">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4a5650"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#b4443c"/></marker>
+    <marker id="aw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a86f14"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1f6f5b"/></marker>
+  </defs>
+  <rect width="1400" height="820" fill="#ffffff"/>
+  <g font-family="Noto Sans JP, Hiragino Kaku Gothic ProN, Yu Gothic, Meiryo, sans-serif">
+    <text x="60" y="58" font-size="30" font-weight="700" fill="#1f2a24">見守りエージェント　全体像</text>
+    <text x="60" y="88" font-size="15" fill="#64707C">iPad が声をかけ、サーバーが判断し、家族には LINE、運用には Slack。外へ出す判断だけは家族が握る。</text>
+
+    <!-- 左: 母の部屋 / iPad -->
+    <rect x="60" y="130" width="300" height="360" rx="14" fill="#F6F8FA" stroke="#DEE2E6" stroke-width="1.5"/>
+    <text x="80" y="164" font-size="17" font-weight="700" fill="#1f2a24">母の部屋</text>
+    <rect x="95" y="190" width="170" height="230" rx="16" fill="#fff" stroke="#1f2a24" stroke-width="3"/>
+    <rect x="108" y="206" width="144" height="198" rx="8" fill="#2563EB" opacity="0.28"/>
+    <circle cx="150" cy="285" r="12" fill="#1f2a24"/><circle cx="210" cy="285" r="12" fill="#1f2a24"/>
+    <path d="M150 335 Q180 360 210 335" stroke="#1f2a24" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <text x="180" y="448" font-size="18" font-weight="700" text-anchor="middle" fill="#1f2a24">iPad</text>
+    <text x="180" y="472" font-size="13" text-anchor="middle" fill="#4a5650">顔・マイク・スピーカー。判断はしない</text>
+    <circle cx="305" cy="260" r="20" fill="#fff" stroke="#1f2a24" stroke-width="2"/>
+    <path d="M272 340 Q305 285 338 340 Z" fill="#fff" stroke="#1f2a24" stroke-width="2"/>
+    <text x="305" y="366" font-size="13" text-anchor="middle" fill="#1f2a24">母</text>
+
+    <!-- 中央: サーバー -->
+    <rect x="470" y="130" width="440" height="560" rx="14" fill="#fff" stroke="#1f6f5b" stroke-width="3"/>
+    <text x="690" y="166" font-size="20" font-weight="700" text-anchor="middle" fill="#1f2a24">サーバー（Cloud Run）</text>
+    <text x="690" y="188" font-size="13" text-anchor="middle" fill="#64707C">頭脳は全部ここ。Google Cloud 上で動く</text>
+
+    <rect x="495" y="210" width="390" height="70" rx="8" fill="#e3efe9"/>
+    <text x="510" y="236" font-size="15" font-weight="700" fill="#1f2a24">① 声かけの計画と時刻の管理</text>
+    <text x="510" y="260" font-size="13" fill="#4a5650">朝6時に予定を読んで計画。「まだ」なら15分後に再確認</text>
+
+    <rect x="495" y="292" width="390" height="70" rx="8" fill="#e3efe9"/>
+    <text x="510" y="318" font-size="15" font-weight="700" fill="#1f2a24">② 返事を理解して次を決める（Gemini）</text>
+    <text x="510" y="342" font-size="13" fill="#4a5650">できた／まだ／返事なし／本人か分からない、を分類</text>
+
+    <rect x="495" y="374" width="390" height="70" rx="8" fill="#e3efe9"/>
+    <text x="510" y="400" font-size="15" font-weight="700" fill="#1f2a24">③ 記録と「今日の様子」（Firestore）</text>
+    <text x="510" y="424" font-size="13" fill="#4a5650">食事・着替え・服薬を項目で記録。音声は保存しない</text>
+
+    <rect x="495" y="456" width="390" height="70" rx="8" fill="#f6ecd6"/>
+    <text x="510" y="482" font-size="15" font-weight="700" fill="#1f2a24">④ 権限の段階（止まる場所）</text>
+    <text x="510" y="506" font-size="13" fill="#4a5650">家族へは自動／外部へは承認後／本人の依頼で外へは連絡しない</text>
+
+    <rect x="495" y="538" width="390" height="70" rx="8" fill="#f7e3e0"/>
+    <text x="510" y="564" font-size="15" font-weight="700" fill="#1f2a24">⑤ 自分を見張る（運用エージェント）</text>
+    <text x="510" y="588" font-size="13" fill="#4a5650">止まっていたら気づき、直せるものは直して報告</text>
+
+    <text x="690" y="660" font-size="12.5" text-anchor="middle" fill="#64707C">行動台帳：何をいつ判断し、何を止めたかを全部残す</text>
+
+    <!-- 右上: 家族 / LINE -->
+    <rect x="1020" y="130" width="320" height="250" rx="14" fill="#F6F8FA" stroke="#DEE2E6" stroke-width="1.5"/>
+    <text x="1040" y="164" font-size="17" font-weight="700" fill="#1f2a24">家族（仕事中）</text>
+    <rect x="1040" y="182" width="280" height="46" rx="8" fill="#06C755"/>
+    <text x="1180" y="212" font-size="18" font-weight="700" text-anchor="middle" fill="#fff">LINE</text>
+    <rect x="1040" y="240" width="280" height="40" rx="6" fill="#fff" stroke="#2563EB"/>
+    <text x="1180" y="265" font-size="13" text-anchor="middle" fill="#1f2a24">夕方 18 時に「今日の様子」</text>
+    <rect x="1040" y="288" width="280" height="40" rx="6" fill="#fff" stroke="#b4443c"/>
+    <text x="1180" y="313" font-size="13" text-anchor="middle" fill="#b4443c">「痛い」や無反応は、すぐ知らせる</text>
+    <text x="1180" y="360" font-size="12.5" text-anchor="middle" fill="#64707C">「確認した」ボタンを押すと段階上げが止まる</text>
+
+    <!-- 右中: 医師・ケアマネ -->
+    <rect x="1020" y="410" width="320" height="110" rx="14" fill="#F6F8FA" stroke="#DEE2E6" stroke-width="1.5"/>
+    <text x="1040" y="444" font-size="17" font-weight="700" fill="#1f2a24">医師・ケアマネジャー</text>
+    <text x="1040" y="470" font-size="13" fill="#4a5650">受診や面談で使う、直近の様子のまとめ</text>
+    <rect x="1040" y="484" width="180" height="26" rx="13" fill="#fff" stroke="#a86f14"/>
+    <text x="1130" y="502" font-size="12.5" text-anchor="middle" fill="#a86f14">家族が承認してから届く</text>
+
+    <!-- 右下: 運用 / Slack -->
+    <rect x="1020" y="550" width="320" height="140" rx="14" fill="#F6F8FA" stroke="#DEE2E6" stroke-width="1.5"/>
+    <text x="1040" y="584" font-size="17" font-weight="700" fill="#1f2a24">運用（開発チーム）</text>
+    <rect x="1040" y="600" width="280" height="46" rx="8" fill="#4A154B"/>
+    <text x="1180" y="630" font-size="18" font-weight="700" text-anchor="middle" fill="#fff">Slack　#mother</text>
+    <text x="1180" y="672" font-size="12.5" text-anchor="middle" fill="#4a5650">障害・復旧・デプロイの報告だけ。母の会話は流さない</text>
+
+    <!-- 矢印: iPad ↔ サーバー -->
+    <line x1="470" y1="250" x2="366" y2="250" stroke="#4a5650" stroke-width="2.5" marker-end="url(#a)"/>
+    <text x="418" y="240" font-size="13" text-anchor="middle" fill="#4a5650">声かけ</text>
+    <line x1="366" y1="320" x2="468" y2="320" stroke="#4a5650" stroke-width="2.5" marker-end="url(#a)"/>
+    <text x="418" y="345" font-size="13" text-anchor="middle" fill="#4a5650">返事</text>
+    <line x1="366" y1="400" x2="468" y2="400" stroke="#4a5650" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#a)"/>
+    <text x="418" y="425" font-size="12" text-anchor="middle" fill="#64707C">生きている信号</text>
+
+    <!-- 矢印: サーバー → LINE -->
+    <line x1="912" y1="255" x2="1018" y2="255" stroke="#4a5650" stroke-width="2.5" marker-end="url(#a)"/>
+    <line x1="912" y1="305" x2="1018" y2="305" stroke="#b4443c" stroke-width="2.5" marker-end="url(#ar)"/>
+    <text x="965" y="243" font-size="12.5" text-anchor="middle" fill="#4a5650">自動</text>
+    <text x="965" y="330" font-size="12.5" text-anchor="middle" fill="#b4443c">緊急は即時</text>
+    <!-- LINE → サーバー（確認ボタン） -->
+    <line x1="1018" y1="352" x2="914" y2="352" stroke="#1f6f5b" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#ag)"/>
+    <text x="965" y="372" font-size="12" text-anchor="middle" fill="#1f6f5b">確認した</text>
+
+    <!-- 家族 → 医師（承認） -->
+    <line x1="1180" y1="382" x2="1180" y2="408" stroke="#a86f14" stroke-width="2.5" marker-end="url(#aw)"/>
+    <text x="1250" y="400" font-size="12.5" fill="#a86f14">承認</text>
+
+    <!-- サーバー → Slack -->
+    <line x1="912" y1="573" x2="1018" y2="600" stroke="#4a5650" stroke-width="2.5" marker-end="url(#a)"/>
+    <text x="960" y="560" font-size="12.5" text-anchor="middle" fill="#4a5650">運用の報告</text>
+
+    <!-- 凡例 -->
+    <g font-size="12.5" fill="#4a5650">
+      <line x1="60" y1="740" x2="100" y2="740" stroke="#4a5650" stroke-width="2.5"/><text x="108" y="745">自動で行う</text>
+      <line x1="200" y1="740" x2="240" y2="740" stroke="#b4443c" stroke-width="2.5"/><text x="248" y="745">緊急（即時）</text>
+      <line x1="350" y1="740" x2="390" y2="740" stroke="#a86f14" stroke-width="2.5"/><text x="398" y="745">家族の承認が要る</text>
+      <line x1="540" y1="740" x2="580" y2="740" stroke="#4a5650" stroke-width="1.5" stroke-dasharray="6 5"/><text x="588" y="745">信号・ボタン（人の操作や機械の生存確認）</text>
+      <text x="60" y="785" fill="#64707C">カメラは使わない。音声は保存しない。本人に頼まれても外へは連絡せず、家族に「頼まれました」と伝えるだけ。</text>
+    </g>
+  </g>
+</svg>
+</body></html>
