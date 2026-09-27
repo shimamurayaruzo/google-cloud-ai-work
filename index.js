@@ -1,6 +1,7 @@
 import { http } from '@google-cloud/functions-framework';
 import { GoogleGenAI } from '@google/genai';
 import { Firestore } from '@google-cloud/firestore';
+import crypto from 'node:crypto';
 
 const TARGET_SCORE = 80;
 const MAX_IMPROVEMENTS = 2;
@@ -89,6 +90,120 @@ function escapeHtml(value = '') {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+
+// -------------------------
+// 合言葉ロック（/history, /approve を守る）
+// 環境変数 APP_PASSPHRASE を設定して使う。未設定なら保護ページは開けない。
+// -------------------------
+
+const APP_PASSPHRASE = process.env.APP_PASSPHRASE ?? '';
+const SESSION_COOKIE = 'gcaw_session';
+const SESSION_TTL_SEC = 60 * 60 * 12;
+
+function sessionSecret() {
+  return crypto
+    .createHash('sha256')
+    .update('gcaw-session:' + APP_PASSPHRASE)
+    .digest();
+}
+
+function makeSessionToken() {
+  const exp = String(Math.floor(Date.now() / 1000) + SESSION_TTL_SEC);
+  const sig = crypto
+    .createHmac('sha256', sessionSecret())
+    .update(exp)
+    .digest('hex');
+  return exp + '.' + sig;
+}
+
+function parseCookies(req) {
+  const out = {};
+  const raw = req.headers?.cookie ?? '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) {
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    }
+  }
+  return out;
+}
+
+function isAuthed(req) {
+  if (!APP_PASSPHRASE) return false;
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token) return false;
+  const [exp, sig] = token.split('.');
+  if (!exp || !sig) return false;
+  if (Number(exp) < Math.floor(Date.now() / 1000)) return false;
+  const expected = crypto
+    .createHmac('sha256', sessionSecret())
+    .update(exp)
+    .digest('hex');
+  const a = Buffer.from(sig, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function passphraseMatches(input = '') {
+  if (!APP_PASSPHRASE) return false;
+  const a = Buffer.from(String(input), 'utf8');
+  const b = Buffer.from(APP_PASSPHRASE, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function safeNextPath(value = '') {
+  const v = String(value);
+  return v.startsWith('/') && !v.startsWith('//') ? v : '/history';
+}
+
+function sessionCookieHeader(req, token, maxAge = SESSION_TTL_SEC) {
+  const secure = (req.headers?.['x-forwarded-proto'] ?? req.protocol) === 'https';
+  return (
+    SESSION_COOKIE + '=' + encodeURIComponent(token) +
+    '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' + maxAge +
+    (secure ? '; Secure' : '')
+  );
+}
+
+function renderLoginPage({ next = '/history', error = '' } = {}) {
+  const notConfigured = !APP_PASSPHRASE;
+  return `
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>合言葉の入力</title>
+      <style>
+        body { font-family: sans-serif; background: #f4f6f3; color: #1f2a24; margin: 0; }
+        .box { max-width: 420px; margin: 80px auto; background: #fff; border: 1px solid #d9dfda; border-radius: 8px; padding: 28px; }
+        h1 { font-size: 18px; margin: 0 0 12px; }
+        p { font-size: 14px; color: #4a5650; }
+        input[type=password] { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border: 1px solid #d9dfda; border-radius: 6px; }
+        button { margin-top: 12px; width: 100%; padding: 10px; font-size: 15px; background: #1f6f5b; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+        .err { color: #b4443c; font-size: 13px; }
+        a { color: #1f6f5b; }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>合言葉の入力</h1>
+        ${notConfigured
+          ? '<p class="err">サーバー側で APP_PASSPHRASE が設定されていません。Cloud Run の環境変数に合言葉を設定してください。</p>'
+          : '<p>履歴の閲覧と承認は、合言葉を知っている人だけが行えます。</p>'}
+        ${error ? `<p class="err">${escapeHtml(error)}</p>` : ''}
+        <form method="POST" action="/login">
+          <input type="hidden" name="next" value="${escapeHtml(next)}">
+          <input type="password" name="passphrase" placeholder="合言葉" autocomplete="current-password" ${notConfigured ? 'disabled' : ''}>
+          <button type="submit" ${notConfigured ? 'disabled' : ''}>入る</button>
+        </form>
+        <p><a href="/">トップへ戻る</a></p>
+      </div>
+    </body>
+    </html>
+  `;
 }
 
 function parseJson(text) {
@@ -278,6 +393,53 @@ ${text}
 // -------------------------
 
 http('helloHttp', async (req, res) => {
+
+  // -------------------------
+  // 合言葉ロック：/login, /logout と保護ルートの判定
+  // -------------------------
+
+  if (req.method === 'GET' && req.path === '/login') {
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderLoginPage({ next: safeNextPath(req.query?.next) }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.path === '/login') {
+    const next = safeNextPath(req.body?.next);
+    if (passphraseMatches(req.body?.passphrase)) {
+      logEvent('login_success', { next });
+      res.set('Set-Cookie', sessionCookieHeader(req, makeSessionToken()));
+      res.redirect(303, next);
+      return;
+    }
+    logEvent('login_failed', {});
+    res.status(401);
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderLoginPage({ next, error: '合言葉が違います。' }));
+    return;
+  }
+
+  if (req.path === '/logout') {
+    res.set('Set-Cookie', sessionCookieHeader(req, '', 0));
+    res.redirect(303, '/');
+    return;
+  }
+
+  const isProtected =
+    (req.method === 'GET' && req.path === '/history') ||
+    (req.method === 'POST' && req.path === '/approve');
+
+  if (isProtected && !isAuthed(req)) {
+    logEvent('auth_required', { path: req.path, method: req.method });
+    if (req.method === 'GET') {
+      res.redirect(303, '/login?next=' + encodeURIComponent(req.path));
+    } else {
+      res.status(403);
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.send(renderLoginPage({ next: '/history', error: '承認には合言葉の入力が必要です。' }));
+    }
+    return;
+  }
 
   // -------------------------
   // POST：人間による最終承認
