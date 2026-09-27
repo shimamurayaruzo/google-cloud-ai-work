@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>見守りエージェント 状況共有 9/27</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@700&family=Noto+Sans+JP:wght@400;700&display=swap">
+<style>
+:root{--bg:#f4f6f3;--paper:#fff;--ink:#1f2a24;--ink-2:#4a5650;--ink-3:#7a8680;--line:#d9dfda;--accent:#1f6f5b;--accent-soft:#e3efe9;--amber:#a86f14;--amber-soft:#f6ecd6;--red:#b4443c;--red-soft:#f7e3e0;
+--display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;--body:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15.5px;line-height:1.8}
+.page{max-width:760px;margin:0 auto;padding:44px 24px 80px}
+.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--ink-3);margin-bottom:8px}
+h1{font-family:var(--display);font-size:28px;line-height:1.4;margin:0 0 10px}
+.lede{color:var(--ink-2);margin:0 0 4px}.meta{font-size:13px;color:var(--ink-3);margin-bottom:32px}
+h2{font-family:var(--display);font-size:20px;margin:36px 0 10px;display:flex;gap:10px;align-items:baseline}
+h2::before{content:"";width:9px;height:9px;background:var(--accent);display:inline-block;transform:translateY(-2px)}
+p{margin:0 0 12px}ul,ol{margin:0 0 12px;padding-left:1.4em}li{margin:4px 0}
+.tablewrap{overflow-x:auto;margin:8px 0 14px}table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}th{font-size:12.5px;color:var(--ink-2);background:var(--paper)}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:3px;font-weight:700;white-space:nowrap}
+.ok{background:var(--accent-soft);color:var(--accent)}.wait{background:var(--amber-soft);color:var(--amber)}.no{background:var(--red-soft);color:var(--red)}
+.box{background:var(--paper);border:1px solid var(--line);padding:16px 20px;margin:14px 0}
+.callout{background:var(--accent-soft);border-left:3px solid var(--accent);padding:12px 16px;margin:14px 0}
+pre{background:var(--paper);border:1px solid var(--line);padding:12px 14px;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre-wrap}
+.note{font-size:14px;color:var(--ink-2)}
+</style>
+</head>
+<body><div class="page">
+<div class="eyebrow">第5回 Agentic AI Hackathon with Google Cloud ／ チーム内 状況共有</div>
+<h1>見守りエージェント、9月27日時点の状況</h1>
+<p class="lede">見守り一本で確定。本番の足場（合言葉ロック、自動デプロイ、gcloud）ができ、エージェントの中核を1日試作して動きました。杉浦さんの指摘は企画に反映します。</p>
+<div class="meta">作成: 島村 ／ 締切 10月15日（木）23:59 ／ 残り 18 日</div>
+
+<h2>1. 今週決まったこと</h2>
+<div class="tablewrap"><table>
+<tr><th style="width:34%">項目</th><th>決定</th></tr>
+<tr><td>企画</td><td>見守り一本で確定（杉浦さん・馬場さん賛成）。企画書は v0.2（競合調査と現場ヒアリング反映）を docs/01_企画書.md に置いた</td></tr>
+<tr><td>本番の足場</td><td>PR #1 を main にマージ。履歴と承認は合言葉ロックの内側に入った。GitHub の main への反映で Cloud Run に自動デプロイ。合言葉は島村から個別にお渡しします</td></tr>
+<tr><td>端末</td><td>母の部屋に iPad Pro 12.9インチ（第4世代）。Safari の Web アプリで顔と声を出す。Stack-chan などの筐体は最終ピッチ用に後から検討</td></tr>
+<tr><td>デイサービス</td><td>9/29（火）から火・金。声かけ計画の初期値は docs/03_声かけ計画_初期値.md（朝: おむつ交換→歯磨き→洗顔→着替え、夕食後に薬2錠）</td></tr>
+<tr><td>通知</td><td>家族向け（今日の様子・緊急）は LINE、二段目はメール。通知先は順番付きの一覧として登録できる設計。運用の障害・復旧は今回用に新設する Slack チャンネルへ。母の会話はチームの Slack には流さない</td></tr>
+<tr><td>人感センサー</td><td>今は買わない。10/3 の統合日に Must の進み具合で判断。代わりは iPad のマイクで「生活音の大きさ」だけを見る（録音しない）</td></tr>
+<tr><td>Google Cloud</td><td>gcloud をこのPCに導入し、Cloud Run の設定やデプロイをこちらから直接できるようにした（プロジェクト eco-diode-508102-q7、サービス hello-google-cloud）</td></tr>
+</table></div>
+
+<h2>2. 杉浦さんの指摘への回答</h2>
+<div class="tablewrap"><table>
+<tr><th style="width:34%">指摘</th><th>回答</th></tr>
+<tr><td>Care-Call.AI が変化検知と医師への記録共有をすでに謳っている。差別化の見出しから「変化検知」を外し「予定と返答で次の声かけを変える」を前に出す</td><td><span class="tag ok">採用</span> 企画書 v0.3 で見出しを差し替えます。機能としての変化評価は残し、課題の段落に「AI が電話で話す型はすでにある」と一言入れます</td></tr>
+<tr><td>絵本（思い出カード）は MVP に入れない。海馬さん（人生シネマ、回想デンワ）とは競合せず、将来の連携先として1行残す</td><td><span class="tag ok">採用</span> 思い出カードは Should から外して展望へ。海馬さんは「構造化記録がああいう制作の素材になる」連携先として記載します</td></tr>
+<tr><td>テレビや来訪者の声が本人の発話として入った場合、「本人の発話か分からないものは判定せず人に戻す」を基準に入れる</td><td><span class="tag ok">採用済み</span> 試作で「テレビの音」を流すと、判定を unclear として何も決めつけない動きになりました（下の 3 を参照）</td></tr>
+<tr><td>履歴の一覧は認証の内側に</td><td><span class="tag ok">対応済み</span> 合言葉ロックを本番に反映。審査員にはテストアカウントとサンプルデータを渡す前提で組んでいます</td></tr>
+<tr><td>提出物と締切の確認、公式の coding agent 用スキル</td><td><span class="tag ok">同じ認識</span> 提出前チェックはそのスキルで回します</td></tr>
+</table></div>
+
+<h2>3. エージェントの中核を1日試作した結果</h2>
+<p>「1回の声かけターン」を、Google の ADK（TypeScript 版）で書いて動かしました。返事を読んで、記録し、次の行動を決め、権限の段階に従う、という部分です。5 つの返事パターンが全部期待どおりに動き、1ターン 2.4〜4.4 秒でした。</p>
+<div class="tablewrap"><table>
+<tr><th style="width:30%">母の返事</th><th>エージェントの動き</th></tr>
+<tr><td>「まだ」</td><td>着替え=まだ と記録 → お迎えに間に合うよう 15 分後に再確認を予約 → 「そろそろお着替えしましょうか」</td></tr>
+<tr><td>「着替えたよ」</td><td>着替え=できた と記録 → 「お済みになったのですね」</td></tr>
+<tr><td>「疲れた。ちょっと腰が痛いの」</td><td>記録 → 家族へ緊急通知（根拠の発話付き）→ 「無理しないで座って休みましょうか」。医療判断はしない</td></tr>
+<tr><td>（テレビの音）「続いては全国の天気です…」</td><td>本人の発話か分からない=unclear と記録。何も決めつけず、お茶の声かけを続ける</td></tr>
+<tr><td>「妹に電話してちょうだい」</td><td>自分では電話せず、家族へ「頼まれました」と通知 → 「ご家族に伝えておきますね」</td></tr>
+<tr><td>（家族画面）「医師に共有して」承認なし</td><td>共有の道具を呼ぼうとした瞬間に止まる（家族の承認がない）。承認ありなら通る</td></tr>
+</table></div>
+<div class="callout"><strong>採用範囲を決めました。</strong> 会話ターンの実行、道具の型定義、権限段階の一元化、トレース（行動台帳の元データ）は ADK を使います。声かけの時刻、再確認、日次要約の起動、Firestore の設計は自前の状態機械のままにします。ADK は TypeScript 版なので、今の Node.js のアプリに同居でき、二本立てにはなりません。</div>
+<p class="note">ADK を選んだ理由は審査員向けではなく、権限段階を「プロンプトのお願い」ではなく「道具を呼ぶ直前に必ず通る一か所」で止められることです。試作コードは agent-spike/ にあります。</p>
+
+<h2>4. 分担と日付</h2>
+<div class="tablewrap"><table>
+<tr><th style="width:18%">担当</th><th>成果物</th><th style="width:16%">期日</th></tr>
+<tr><td rowspan="4">杉浦さん</td><td>「いつもと違う」の基準（判定できないものは人に戻す境界を含む）</td><td>10/2</td></tr>
+<tr><td>家族向けレポートの設計（夕方の「今日の様子」の型、医師・ケアマネ向け要約）</td><td>10/3</td></tr>
+<tr><td>3分デモ動画の台本</td><td>10/5</td></tr>
+<tr><td>Zenn 記事の骨組み</td><td>10/10</td></tr>
+<tr><td>馬場さん</td><td>母側の顔つき声かけ画面（iPad の Safari）と、家族側の画面（今日の様子、承認、設定、実行の一覧）。エージェントの API ができる前でも、ダミー応答で作り始められる形にします</td><td>10/8 に統合</td></tr>
+<tr><td>島村 + Claude</td><td>エージェント本体（状態機械、ADK の会話ターン、通知の権限段階、行動台帳、日次要約、運用エージェント）、Firestore、Cloud Run と自動デプロイ、API の設計書</td><td>10/2 に縦一本、10/8 に統合</td></tr>
+</table></div>
+<p class="note">進め方の細部（フォルダの分け方、ブランチの規則、同期の頻度）は島村が整理中です。杉浦さんの4本は、上の期日で進めてもらえれば助かります。</p>
+
+<h2>5. 次の1週間（9/27〜10/3）</h2>
+<ol>
+<li>API とデータの形の設計書（docs/02_設計書.md）を出す。馬場さんはこれを見て画面を作り始められる</li>
+<li>朝の声かけ一連（おむつ→歯磨き→洗顔→着替え→お迎え）が iPad と Cloud Run で通り、要約が1通届く縦一本</li>
+<li>「痛い」「無反応」の緊急通知と段階上げ</li>
+<li>杉浦さんの基準（10/2）を受けて、判定のしきい値を合わせる</li>
+<li>9/29 のオフィスアワーに構成を持ち込む</li>
+</ol>
+
+<h2>6. お願い</h2>
+<ul>
+<li>合言葉は個別メッセージでお渡しします。Slack の公開チャンネルには貼らないでください</li>
+<li>gcloud（Google Cloud のコマンド）は各自のPCにも入れておくと、ログの確認や手元での動作確認ができます。手順が必要なら言ってください</li>
+<li>企画書 v0.3（杉浦さんの指摘反映）は明日出します。目を通してもらえると助かります</li>
+</ul>
+</div></body></html>
