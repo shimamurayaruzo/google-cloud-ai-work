@@ -16,7 +16,7 @@
 
 - 言語は TypeScript/Node.js に一本化。ADK は @google/adk（TypeScript）を「会話ターンの実行・型付き道具・権限段階の一元化（beforeToolCallback）・トレース」にだけ使う。時刻・再確認・要約の起動は自前の状態機械。
 - 実行基盤は Cloud Run 1 サービス（hello-google-cloud、asia-northeast1、プロジェクト eco-diode-508102-q7）。GitHub の main への反映で自動デプロイされるので、main は常に動く状態を保つ。
-- Firestore は `default`（本番）と `dev`（開発）。手元では `FIRESTORE_DATABASE=dev`。
+- Firestore は `default`（本番）と `develop`（開発。Firestore の ID は 4 文字以上なので `dev` ではない）。手元では `FIRESTORE_DATABASE=develop`。
 - 秘密情報（合言葉、Slack Webhook、LINE トークン）は Cloud Run の環境変数にだけ置く。リポジトリとチャットに書かない。
 - 権限段階: 家族への通知は自動／医師・ケアマネへの共有は家族の承認後／本人に頼まれた外部連絡はしない。
 - 入力を疑う: テレビや来訪者の声など本人の発話か分からないものは `unclear` として判定しない。

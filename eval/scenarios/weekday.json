@@ -1,0 +1,56 @@
+{
+  "name": "デイ以外の日（docs/03 §2 の表から）",
+  "date": "2026-10-01",
+  "isDayservice": false,
+  "turns": [
+    {
+      "at": "08:00",
+      "task": "greeting",
+      "reply": "おはよう。よく寝たよ",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "08:05",
+      "task": "diaper",
+      "reply": "あとで",
+      "expect": {
+        "status": "not_yet"
+      }
+    },
+    {
+      "at": "08:20",
+      "task": "diaper",
+      "reply": "替えたよ",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "12:00",
+      "task": "lunch",
+      "reply": null,
+      "expect": {
+        "status": "no_answer"
+      }
+    },
+    {
+      "at": "12:30",
+      "task": "lunch",
+      "reply": null,
+      "expect": {
+        "status": "no_answer",
+        "notify": "check"
+      }
+    },
+    {
+      "at": "19:40",
+      "task": "medicine",
+      "reply": "飲んだよ",
+      "expect": {
+        "status": "done"
+      }
+    }
+  ]
+}
