@@ -10,6 +10,15 @@
 - Google Cloud 側の準備手順: [infra/setup.md](infra/setup.md)
 - AI（Claude Code など）が最初に読む入口: [CLAUDE.md](CLAUDE.md)
 
+## 設計の根拠と限界
+
+判定の基準と出力の形の根拠（原文・URL・取得日）は [docs/rationale.md](docs/rationale.md) にまとめている。
+閾値は初期値で家族が変更できる。
+専門職の検証は未実施。
+
+- 「いつもと違う」の判定基準: [docs/criteria.md](docs/criteria.md)
+- 家族向けレポートと救急への引継ぎの型: [docs/report-design.md](docs/report-design.md)
+
 ## 構成
 
 Cloud Run 1 サービス（TypeScript / Node.js）。パスで役割を分ける。

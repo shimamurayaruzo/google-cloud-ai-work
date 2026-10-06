@@ -9,6 +9,7 @@
 - 企画: docs/01_企画書.md（v0.3、チーム合意済み）
 - 部品の境目: docs/02_設計書.md（API・Firestore のデータの形・権限段階・状態機械・台帳イベント・環境変数）
 - 声かけ計画の初期値と再生モードの台本: docs/03_声かけ計画_初期値.md
+- 判定基準・レポートの型・根拠: docs/criteria.md, docs/report-design.md, docs/rationale.md（杉浦）
 - 直近の状況共有: docs/04_状況共有_2026-09-27.html
 - ADK（TypeScript）の試作と結果: agent-spike/README.md
 
