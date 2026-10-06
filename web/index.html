@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>見張らない見守り</title>
+  <style>
+    :root { --bg: #f4f6f3; --fg: #1f2a24; --muted: #4a5650; --line: #d9dfda; --accent: #1f6f5b; --card: #fff; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #151a17; --fg: #e6ece8; --muted: #a9b5ae; --line: #2e3833; --accent: #6cc3a8; --card: #1d2420; }
+    }
+    body { font-family: sans-serif; background: var(--bg); color: var(--fg); margin: 0; }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p { color: var(--muted); line-height: 1.7; }
+    .note { border: 1px dashed var(--line); padding: 12px 14px; border-radius: 8px; font-size: 14px; }
+    ul { list-style: none; padding: 0; display: grid; gap: 10px; }
+    li a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; color: var(--fg); text-decoration: none; }
+    li a:hover { border-color: var(--accent); }
+    li a b { color: var(--accent); }
+    small { color: var(--muted); display: block; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>見張らない見守り</h1>
+  <p>予定と返答で次の声かけを変える、在宅介護の見守りエージェントです。</p>
+  <p class="note">このページは開発用の入口です。馬場さんの本画面（顔画面・家族画面）ができたら、ここと <code>/device</code>・<code>/family</code> はそれに置き換わります。</p>
+  <ul>
+    <li><a href="/device"><b>/device</b> 顔画面（iPad）<small>本画面が無い間は開発者向け確認ページを出します</small></a></li>
+    <li><a href="/family"><b>/family</b> 家族の画面<small>合言葉でログインします。本画面が無い間は開発者向け確認ページを出します</small></a></li>
+    <li><a href="/dev/device.html"><b>/dev/device.html</b> 開発者向け: 端末の確認ページ<small>生存信号、声かけの読み上げ、返事の送信</small></a></li>
+    <li><a href="/dev/family.html"><b>/dev/family.html</b> 開発者向け: 家族 API の確認ページ<small>今日の様子、計画、承認、台帳、設定、停止、再生モード</small></a></li>
+    <li><a href="/healthz"><b>/healthz</b> 死活確認<small>{ "ok": true } を返します</small></a></li>
+  </ul>
+</main>
+</body>
+</html>

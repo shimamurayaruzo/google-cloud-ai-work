@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>家族 API の確認ページ（開発用）</title>
+  <style>
+    :root { --bg: #f4f6f3; --fg: #1f2a24; --muted: #5a6660; --line: #d9dfda; --accent: #1f6f5b; --card: #fff; --warn: #b4443c; --ok: #1f7a3a; --okbg: #e3f3e7; --ngbg: #fbe6e3; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #151a17; --fg: #e6ece8; --muted: #a9b5ae; --line: #2e3833; --accent: #6cc3a8; --card: #1d2420; --warn: #e98a80; --ok: #7fd49a; --okbg: #1e3326; --ngbg: #3a2220; }
+    }
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; background: var(--bg); color: var(--fg); margin: 0; }
+    main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 18px; margin: 0; }
+    h2 { font-size: 16px; margin: 16px 0 8px; }
+    .banner { font-size: 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+    input, select, textarea { padding: 7px; font-size: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+    textarea { width: 100%; font-family: monospace; font-size: 12px; }
+    button { padding: 7px 12px; font-size: 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--accent); }
+    button.danger { background: var(--warn); border-color: var(--warn); }
+    .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+    .tabs button { background: transparent; color: var(--fg); border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; }
+    .tabs button.on { border-color: var(--line); background: var(--card); color: var(--accent); font-weight: bold; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: normal; white-space: nowrap; }
+    tr.pass td { background: var(--okbg); }
+    tr.fail td { background: var(--ngbg); }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .err { color: var(--warn); }
+    .okc { color: var(--ok); }
+    pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 12px; overflow: auto; max-height: 360px; }
+    .hidden { display: none; }
+    .summary p { margin: 4px 0; line-height: 1.7; }
+    .cite { font-size: 11px; margin-left: 4px; cursor: pointer; color: var(--accent); text-decoration: underline; }
+    .levels { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  </style>
+</head>
+<body>
+<main>
+  <div class="bar" style="justify-content: space-between">
+    <h1>家族 API の確認ページ（開発者向け）</h1>
+    <div class="bar"><span class="muted" id="who"></span><button class="secondary hidden" id="logout">ログアウト</button></div>
+  </div>
+  <p class="banner">これは API を確かめるための開発用ページです。ご家族が使う本画面は馬場さんが別に作ります。入出力の例は <code>src/api/README.md</code>。</p>
+  <div id="msg" class="muted"></div>
+
+  <section class="card hidden" id="loginCard">
+    <h2 style="margin-top:0">合言葉でログイン</h2>
+    <div class="bar">
+      <input type="password" id="pass" placeholder="合言葉" autocomplete="current-password">
+      <button id="loginBtn">入る</button>
+    </div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="bar card">
+      <label class="muted">世帯 <input id="hh" placeholder="省略時は既定の世帯" size="14"></label>
+      <label class="muted">日付 <input id="date" type="date"></label>
+      <button class="secondary" id="reload">読み直す</button>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+
+    <div data-tab="today"></div>
+    <div data-tab="plan" class="hidden"></div>
+    <div data-tab="approvals" class="hidden"></div>
+    <div data-tab="ledger" class="hidden"></div>
+    <div data-tab="settings" class="hidden"></div>
+    <div data-tab="kill" class="hidden"></div>
+    <div data-tab="replay" class="hidden"></div>
+    <div data-tab="capabilities" class="hidden"></div>
+    <section class="card hidden" id="turnCard"><h2 style="margin-top:0">ターンの詳細</h2><pre id="turnPre"></pre></section>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const TABS = [
+    ['today', '今日'], ['plan', '計画'], ['approvals', '承認待ち'], ['ledger', '台帳'],
+    ['settings', '設定'], ['kill', '停止スイッチ'], ['replay', '再生'], ['capabilities', 'できること'],
+  ];
+  let active = 'today';
+  let labels = {};
+
+  // ---- 小道具（サーバーの文字列は textContent でだけ入れる） ----
+  function el(tag, attrs = {}, ...children) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else if (v !== undefined && v !== null) e.setAttribute(k, v);
+    }
+    for (const c of children.flat()) {
+      if (c == null) continue;
+      e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    }
+    return e;
+  }
+  function msg(text, isErr) { const m = $('#msg'); m.textContent = text || ''; m.className = isErr ? 'err' : 'muted'; }
+  function fmt(v) {
+    if (v == null) return '';
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
+      const d = new Date(v);
+      return d.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
+  function table(rows, cols, rowClass) {
+    if (!rows || rows.length === 0) return el('p', { class: 'muted' }, 'なし');
+    cols = cols || Array.from(rows.reduce((s, r) => { Object.keys(r).forEach(k => s.add(k)); return s; }, new Set()));
+    const head = el('tr', {}, cols.map(c => el('th', {}, Array.isArray(c) ? c[1] : c)));
+    const body = rows.map(r => el('tr', { class: rowClass ? rowClass(r) : '' },
+      cols.map(c => {
+        const key = Array.isArray(c) ? c[0] : c;
+        const v = typeof key === 'function' ? key(r) : r[key];
+        return el('td', {}, v instanceof Node ? v : fmt(v));
+      })));
+    return el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, head), el('tbody', {}, body)));
+  }
+  function label(task) { return labels[task] ? `${labels[task]}（${task}）` : task; }
+  function q(extra = {}) {
+    const p = new URLSearchParams();
+    const hh = $('#hh').value.trim();
+    if (hh) p.set('hh', hh);
+    for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') p.set(k, v);
+    const s = p.toString();
+    return s ? '?' + s : '';
+  }
+  async function api(method, path, body) {
+    const res = await fetch(path, {
+      method, credentials: 'same-origin',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* 空 */ }
+    if (res.status === 401 && path !== '/api/family/login') { showLogin(); throw new Error('ログインが必要です'); }
+    if (!res.ok) throw new Error(`${res.status} ${data && data.error ? data.error : res.statusText}`);
+    return data;
+  }
+  function pane(name) { return $(`[data-tab="${name}"]`); }
+
+  // ---- ログイン ----
+  function showLogin() { $('#loginCard').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden'); $('#who').textContent = ''; }
+  function showApp() { $('#loginCard').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden'); $('#who').textContent = 'ログイン中（家族）'; }
+  $('#loginBtn').addEventListener('click', async () => {
+    try {
+      await api('POST', '/api/family/login', { passphrase: $('#pass').value });
+      $('#pass').value = '';
+      showApp(); msg('ログインしました'); load();
+    } catch (e) { msg(e.message, true); }
+  });
+  $('#pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('#loginBtn').click(); });
+  $('#logout').addEventListener('click', async () => { try { await api('POST', '/api/family/logout', {}); } catch { /* 無視 */ } showLogin(); msg('ログアウトしました'); });
+
+  // ---- タブ ----
+  const nav = $('#tabs');
+  for (const [key, name] of TABS) {
+    nav.append(el('button', { 'data-key': key, class: key === active ? 'on' : '', onclick: () => { active = key; for (const b of nav.children) b.classList.toggle('on', b.dataset.key === key); for (const [k] of TABS) pane(k).classList.toggle('hidden', k !== key); load(); } }, name));
+  }
+  $('#reload').addEventListener('click', () => load());
+
+  async function showTurn(turnId) {
+    try {
+      const r = await api('GET', `/api/family/turn/${encodeURIComponent(turnId)}` + q());
+      $('#turnCard').classList.remove('hidden');
+      $('#turnPre').textContent = JSON.stringify(r.turn, null, 2);
+      $('#turnCard').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) { msg(e.message, true); }
+  }
+
+  // ---- 各タブ ----
+  const loaders = {
+    async today(p) {
+      const r = await api('GET', '/api/family/today' + q({ date: $('#date').value }));
+      labels = r.taskLabels || labels;
+      if (!$('#date').value) $('#date').value = r.date;
+      const day = r.day;
+      const tasks = day ? Object.entries(day.tasks || {}).map(([task, t]) => ({ task, ...t })) : [];
+      const summary = day && day.summary;
+      const cites = summary ? summary.citations || [] : [];
+      p.replaceChildren(
+        el('div', { class: 'card' },
+          el('div', { class: 'bar' },
+            el('span', { class: 'pill' }, r.date),
+            el('span', { class: 'pill' }, day ? (day.isDayservice ? 'デイの日' : 'デイなし') : '日の記録なし'),
+            el('span', { class: 'pill' }, day && day.planApproved ? `計画承認済み（${fmt(day.planApproved.at)}）` : '計画は未承認'),
+            el('span', { class: r.household.killSwitch ? 'pill err' : 'pill' }, r.household.killSwitch ? '停止中' : '動作中'),
+            el('span', { class: 'muted' }, '通知の順番: ' + r.household.members.map(m => `${m.order}. ${m.name}`).join(' → ')),
+          )),
+        el('div', { class: 'card summary' }, el('h2', { style: 'margin-top:0' }, '今日の様子（要約）'),
+          summary ? [
+            ...(summary.sentences && summary.sentences.length ? summary.sentences : [summary.text]).map((s, i) =>
+              el('p', {}, s, ...cites.filter(c => c.sentenceIndex === i).map(c => el('span', { class: 'cite', onclick: () => showTurn(c.turnId) }, '[根拠]')))),
+            summary.changeNote ? el('p', { class: 'muted' }, summary.changeNote) : null,
+            el('p', { class: 'muted' }, summary.sentAt ? `送信: ${fmt(summary.sentAt)}` : '未送信'),
+          ] : el('p', { class: 'muted' }, 'まだありません（18:00 に作ります）')),
+        el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, '確認項目'),
+          table(tasks, [['task', '項目'], [t => label(t.task), '名前'], ['state', '状態'], ['status', '分類'], ['at', '時刻'], ['evidence', '抜粋'], ['recheckCount', '再確認']])),
+        el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, 'ターン'),
+          table(r.turns, [['repliedAt', '時刻'], [t => label(t.task), '項目'], ['promptText', '声かけ'], ['replyText', '返事（40 字まで）'], [t => t.classified && t.classified.status, '分類'], [t => t.classified && t.classified.by, '判定'], ['say', 'AI の一言'], [t => el('button', { class: 'secondary', onclick: () => showTurn(t.id) }, '詳細'), '']])),
+        el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, '通知'),
+          table(r.notices, [['createdAt', '時刻'], ['level', '段階'], ['reason', '理由'], ['evidence', '根拠'], ['state', '状態'], [n => n.steps.length, '送信数'],
+            [n => ['open', 'waiting', 'deferred'].includes(n.state) ? el('button', { onclick: async () => { try { await api('POST', `/api/family/notices/${encodeURIComponent(n.id)}/ack` + q(), {}); msg('確認済みにしました'); load(); } catch (e) { msg(e.message, true); } } }, '確認した') : '', '']])),
+        el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, '声かけの予定'),
+          table(r.prompts, [['scheduledAt', '予定'], [x => label(x.task), '項目'], ['text', '文言'], ['state', '状態'], ['isRecheck', '再確認']])),
+        el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, '健康状態（運用）'),
+          r.health ? [el('p', {}, `最後の生存信号: ${fmt(r.health.lastHeartbeatAt) || 'なし'}`), table(r.health.incidents, [['at', '時刻'], ['kind', '種類'], ['action', '処置'], ['resolvedAt', '復旧']])] : el('p', { class: 'muted' }, 'なし')),
+      );
+    },
+
+    async plan(p) {
+      const r = await api('GET', '/api/family/plan' + q({ date: $('#date').value }));
+      labels = r.taskLabels || labels;
+      p.replaceChildren(el('div', { class: 'card' },
+        el('div', { class: 'bar' },
+          el('span', { class: 'pill' }, r.date),
+          el('span', { class: 'pill' }, r.isDayservice == null ? '日の記録なし' : (r.isDayservice ? 'デイの日' : 'デイなし')),
+          el('span', { class: r.planApproved ? 'pill okc' : 'pill' }, r.planApproved ? `承認済み（${r.planApproved.by}、${fmt(r.planApproved.at)}）` : '未承認'),
+          r.plan && !r.planApproved ? el('button', { onclick: async () => { try { await api('POST', '/api/family/plan/approve' + q(), { date: r.date }); msg('計画を承認しました'); load(); } catch (e) { msg(e.message, true); } } }, 'この計画で承認する') : null),
+        el('h2', {}, '声かけ計画'),
+        table(r.plan || [], [['time', '時刻'], [x => label(x.task), '項目'], ['text', '文言'], ['recheckMinutes', '再確認（分）'], ['escalate', '家族へ']])));
+    },
+
+    async approvals(p) {
+      const r = await api('GET', '/api/family/approvals' + q());
+      const decide = async (ap, decision, ta) => {
+        let editedPayload;
+        if (ta && ta.value.trim()) { try { editedPayload = JSON.parse(ta.value); } catch { msg('直した内容が JSON になっていません', true); return; } }
+        try { const res = await api('POST', `/api/family/approvals/${encodeURIComponent(ap.id)}` + q(), { decision, ...(editedPayload ? { editedPayload } : {}) }); msg(decision === 'approved' ? (res.executed ? '承認し、実行を記録しました' : '承認しました') : '却下しました'); load(); } catch (e) { msg(e.message, true); }
+      };
+      p.replaceChildren(el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, '承認待ち'),
+        r.approvals.length === 0 ? el('p', { class: 'muted' }, 'なし') :
+          r.approvals.map(ap => {
+            const ta = el('textarea', { rows: '4', placeholder: '一文だけ直すときは、直した payload を JSON で（空なら元のまま）' });
+            return el('div', { class: 'card' },
+              el('div', { class: 'bar' }, el('span', { class: 'pill' }, ap.kind), el('span', { class: 'muted' }, `依頼: ${fmt(ap.requestedAt)}`)),
+              el('pre', {}, JSON.stringify(ap.payload, null, 2)), ta,
+              el('div', { class: 'bar' }, el('button', { onclick: () => decide(ap, 'approved', ta) }, '承認'), el('button', { class: 'danger', onclick: () => decide(ap, 'rejected') }, '却下')));
+          })));
+    },
+
+    async ledger(p) {
+      const r = await api('GET', '/api/family/ledger' + q({ date: $('#date').value }));
+      p.replaceChildren(el('div', { class: 'card' }, el('h2', { style: 'margin-top:0' }, `行動台帳（${r.date}、${r.entries.length} 件）`),
+        table(r.entries, [['at', '時刻'], ['actor', '誰が'], ['kind', '種類'], ['name', 'イベント'], ['args', '引数'], ['result', '結果'], ['turnId', 'ターン'], ['noticeId', '通知']])));
+    },
+
+    async settings(p) {
+      const r = await api('GET', '/api/family/settings' + q());
+      const editable = { name: r.name, person: r.person, plan: r.plan, policy: r.policy, members: r.members.map(({ lineLinked, ...m }) => m) };
+      const ta = el('textarea', { rows: '28' });
+      ta.value = JSON.stringify(editable, null, 2);
+      p.replaceChildren(el('div', { class: 'card' },
+        el('h2', { style: 'margin-top:0' }, '設定（JSON で直して保存）'),
+        el('p', { class: 'muted' }, 'LINE の登録（line.userId）はここでは変えられません。停止スイッチは「停止スイッチ」タブで。LINE 登録済み: ' + (r.members.filter(m => m.lineLinked).map(m => m.name).join('、') || 'なし')),
+        ta,
+        el('div', { class: 'bar' }, el('button', { onclick: async () => {
+          let body; try { body = JSON.parse(ta.value); } catch { msg('JSON になっていません', true); return; }
+          try { const res = await api('PUT', '/api/family/settings' + q(), body); msg('保存しました: ' + res.changed.join(', ')); load(); } catch (e) { msg(e.message, true); }
+        } }, '保存'))));
+    },
+
+    async kill(p) {
+      const r = await api('GET', '/api/family/settings' + q());
+      const set = async (on) => { try { await api('POST', '/api/family/kill-switch' + q(), { on }); msg(on ? '止めました' : '再開しました'); load(); } catch (e) { msg(e.message, true); } };
+      p.replaceChildren(el('div', { class: 'card' },
+        el('h2', { style: 'margin-top:0' }, '停止スイッチ'),
+        el('p', { class: r.killSwitch ? 'err' : 'okc' }, r.killSwitch ? 'いまは止まっています（声かけ・通知・道具はすべて止まります）' : 'いまは動いています'),
+        el('div', { class: 'bar' },
+          el('button', { class: 'danger', onclick: () => set(true) }, '今すぐ止める'),
+          el('button', { class: 'secondary', onclick: () => set(false) }, '再開する'))));
+    },
+
+    async replay(p) {
+      let names = [];
+      try { names = (await api('GET', '/api/family/replay/scenarios' + q())).names; } catch (e) { msg(e.message, true); }
+      const sel = el('select', {}, el('option', { value: '' }, '（下の JSON を使う）'), names.map(n => el('option', { value: n }, n)));
+      const agent = el('select', {}, el('option', { value: 'rules' }, '規則（LLM なし）'), el('option', { value: 'adk' }, 'ADK（Gemini）'));
+      const ta = el('textarea', { rows: '10', placeholder: '{ "date": "2026-10-02", "isDayservice": true, "turns": [ { "at": "08:00", "task": "greeting", "reply": "うん、まあまあ", "expect": { "status": "done" } } ] }' });
+      const out = el('div');
+      const run = async () => {
+        let body;
+        if (sel.value) body = { name: sel.value };
+        else { try { body = JSON.parse(ta.value); } catch { msg('台本が JSON になっていません', true); return; } }
+        out.replaceChildren(el('p', { class: 'muted' }, '再生中…'));
+        try {
+          const res = await api('POST', '/api/family/replay' + q({ agent: agent.value }), body);
+          renderReplay(out, res);
+          msg('再生が終わりました');
+        } catch (e) { out.replaceChildren(); msg(e.message, true); }
+      };
+      p.replaceChildren(el('div', { class: 'card' },
+        el('h2', { style: 'margin-top:0' }, '再生モード'),
+        el('p', { class: 'muted' }, '本番とは別の記憶領域で台本を流します。LINE・メール・Slack には何も送りません。'),
+        el('div', { class: 'bar' }, el('label', { class: 'muted' }, '台本 ', sel), el('label', { class: 'muted' }, '判定 ', agent), el('button', { onclick: run }, '再生する')),
+        el('div', { style: 'margin-top:8px' }, ta), out));
+    },
+
+    async capabilities(p) {
+      const r = await api('GET', '/api/family/capabilities' + q());
+      p.replaceChildren(el('div', { class: 'card' },
+        el('h2', { style: 'margin-top:0' }, r.title), el('p', { class: 'muted' }, r.note),
+        el('div', { class: 'levels' }, r.levels.map(l => el('div', { class: 'card' }, el('b', {}, l.label), el('p', { class: 'muted' }, l.description), el('ul', {}, l.examples.map(x => el('li', {}, x)))))),
+        el('p', {}, r.stopSwitch), el('ul', {}, r.privacy.map(x => el('li', { class: 'muted' }, x)))));
+    },
+  };
+
+  function passOf(step) {
+    if (typeof step.pass === 'boolean') return step.pass;
+    if (typeof step.ok === 'boolean') return step.ok;
+    if (typeof step.passed === 'boolean') return step.passed;
+    return null;
+  }
+  function renderReplay(out, res) {
+    const steps = Array.isArray(res.steps) ? res.steps : [];
+    const passCount = steps.filter(s => passOf(s) === true).length;
+    const failCount = steps.filter(s => passOf(s) === false).length;
+    const rest = Object.fromEntries(Object.entries(res).filter(([k]) => k !== 'steps'));
+    out.replaceChildren(
+      el('h2', {}, `結果: 合格 ${passCount} ／ 不合格 ${failCount} ／ 全 ${steps.length}`),
+      table(steps.map(s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v])) ), null, s => passOf(s) === true ? 'pass' : passOf(s) === false ? 'fail' : ''),
+      el('h2', {}, 'そのほか'), el('pre', {}, JSON.stringify(rest, null, 2)));
+  }
+
+  async function load() {
+    $('#turnCard').classList.add('hidden');
+    try { await loaders[active](pane(active)); } catch (e) { msg(e.message, true); }
+  }
+
+  // ---- 起動 ----
+  (async () => {
+    try {
+      const s = await api('GET', '/api/family/session');
+      if (!s.passphraseConfigured) msg('サーバー側で合言葉（APP_PASSPHRASE）が設定されていません', true);
+      if (s.authed) { showApp(); load(); } else showLogin();
+    } catch (e) { msg(e.message, true); showLogin(); }
+  })();
+})();
+</script>
+</body>
+</html>

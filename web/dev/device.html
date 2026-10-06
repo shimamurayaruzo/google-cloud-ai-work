@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>端末の確認ページ（開発用）</title>
+  <style>
+    :root { --bg: #f4f6f3; --fg: #1f2a24; --muted: #5a6660; --line: #d9dfda; --accent: #1f6f5b; --card: #fff; --warn: #b4443c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #151a17; --fg: #e6ece8; --muted: #a9b5ae; --line: #2e3833; --accent: #6cc3a8; --card: #1d2420; --warn: #e98a80; }
+    }
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; background: var(--bg); color: var(--fg); margin: 0; }
+    main { max-width: 860px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 18px; margin: 0; }
+    .banner { font-size: 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+    label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type=text], input[type=password] { width: 100%; padding: 8px; font-size: 15px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+    button { padding: 9px 14px; font-size: 15px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--accent); }
+    button:disabled { opacity: .5; cursor: default; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .status { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+    .status b { color: var(--fg); }
+    .kill { color: var(--warn); font-weight: bold; }
+    #promptText { font-size: clamp(26px, 5vw, 44px); line-height: 1.5; min-height: 2.5em; margin: 8px 0; }
+    #face { font-size: 64px; width: 96px; height: 96px; display: grid; place-items: center; border-radius: 50%; border: 4px solid var(--line); }
+    .face-wrap { display: flex; align-items: center; gap: 16px; }
+    #say { font-size: clamp(20px, 3.5vw, 30px); line-height: 1.5; }
+    .expr-smile { border-color: #e0a526 !important; }
+    .expr-listen { border-color: #3a86c8 !important; }
+    .expr-think { border-color: #8a6bc8 !important; }
+    .expr-worry { border-color: #c8553a !important; }
+    #countdown { font-size: 14px; color: var(--muted); }
+    #log { font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; color: var(--muted); }
+    .err { color: var(--warn); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>端末の確認ページ（開発者向け）</h1>
+  <p class="banner">これは API を確かめるための開発用ページです。本人が見る顔画面（本画面）は馬場さんが別に作ります。</p>
+
+  <section class="card">
+    <div class="row">
+      <div><label for="hh">世帯 ID（hh）</label><input id="hh" type="text" placeholder="hh_main" autocomplete="off"></div>
+      <div><label for="token">端末トークン（X-Device-Token）</label><input id="token" type="password" autocomplete="off"></div>
+    </div>
+    <div class="actions">
+      <button id="start">開始（生存信号と声かけの受け取り）</button>
+      <button id="stop" class="secondary" disabled>止める</button>
+    </div>
+    <div class="status" style="margin-top:10px">
+      <span>状態: <b id="state">停止中</b></span>
+      <span>最後の生存信号: <b id="hbAt">-</b></span>
+      <span>次の予定: <b id="next">-</b></span>
+      <span id="kill"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <label>声かけ</label>
+    <div id="promptText">（声かけを待っています）</div>
+    <div class="status"><span>項目: <b id="promptTask">-</b></span><span id="countdown"></span></div>
+    <div class="actions">
+      <input id="replyText" type="text" placeholder="返事を文字で入れる（例: 着替えたよ）" style="flex:1; min-width: 200px">
+      <button id="sendText" disabled>送る</button>
+      <button id="noAnswer" class="secondary" disabled>返事なし</button>
+      <button id="listen" class="secondary" disabled>もう一度聞く</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <label>AI の一言と表情</label>
+    <div class="face-wrap">
+      <div id="face">🙂</div>
+      <div>
+        <div id="say">-</div>
+        <div class="status"><span>表情: <b id="exprName">-</b></span><span>再確認: <b id="followUp">-</b></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <label>記録（このブラウザの中だけ）</label>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const LS_HH = 'mimamori.dev.hh';
+  const LS_TOKEN = 'mimamori.dev.token';
+  const LISTEN_SECONDS = 20;
+  const EXPR = {
+    smile: { face: '😊', name: 'にっこり' },
+    listen: { face: '👂', name: 'きいている' },
+    think: { face: '🤔', name: 'かんがえ中' },
+    worry: { face: '😟', name: 'しんぱい' },
+  };
+
+  function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 保存できなくても動く */ } }
+
+  $('hh').value = lsGet(LS_HH) || 'hh_main';
+  $('token').value = lsGet(LS_TOKEN);
+
+  let running = false;
+  let hbTimer = null;
+  let pollTimer = null;
+  let current = null;      // いま扱っている声かけ
+  let busy = false;        // 読み上げ・聞き取り・送信の最中
+  let recognition = null;
+  let countdownTimer = null;
+  let micBlocked = false;  // マイクの許可が無い（聞き直しを繰り返さない）
+
+  function log(msg, isErr) {
+    const line = `[${new Date().toLocaleTimeString('ja-JP')}] ${msg}`;
+    const el = $('log');
+    const div = document.createElement('div');
+    div.textContent = line;
+    if (isErr) div.className = 'err';
+    el.prepend(div);
+  }
+
+  function hh() { return $('hh').value.trim(); }
+  function headers() {
+    return { 'Content-Type': 'application/json', 'X-Device-Token': $('token').value.trim() };
+  }
+
+  async function api(method, path, body) {
+    const res = await fetch(path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+    let data = null;
+    try { data = await res.json(); } catch { /* 空 */ }
+    if (!res.ok) throw new Error(`${res.status} ${data && data.error ? data.error : res.statusText}`);
+    return data;
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+  }
+
+  async function heartbeat() {
+    try {
+      const r = await api('POST', '/api/device/heartbeat', { hh: hh(), appVersion: 'dev-device-page' });
+      $('hbAt').textContent = new Date().toLocaleTimeString('ja-JP');
+      $('next').textContent = r.nextPrompt ? `${fmtTime(r.nextPrompt.at)} ${r.nextPrompt.task}` : 'なし';
+      $('kill').textContent = r.killSwitch ? '停止スイッチ: 入（声かけは止まっています）' : '';
+      $('kill').className = r.killSwitch ? 'kill' : '';
+    } catch (e) {
+      log('生存信号の送信に失敗: ' + e.message, true);
+    }
+  }
+
+  async function poll() {
+    if (!running || busy) return;
+    try {
+      const r = await api('GET', '/api/device/next-prompt?hh=' + encodeURIComponent(hh()));
+      if (r.prompt && (!current || current.id !== r.prompt.id)) {
+        current = r.prompt;
+        log(`声かけを受け取りました（${current.task}）`);
+        await present(current);
+      }
+    } catch (e) {
+      log('声かけの取得に失敗: ' + e.message, true);
+    }
+  }
+
+  function setReplyButtons(enabled) {
+    $('sendText').disabled = !enabled;
+    $('noAnswer').disabled = !enabled;
+    $('listen').disabled = !enabled || !recognitionSupported() || micBlocked;
+  }
+
+  // 読み上げが終わらない環境（音声エンジンが無いなど）でも先へ進めるよう、長さに応じた上限で打ち切る
+  function speak(text, ttsUrl) {
+    const limitMs = 4000 + String(text || '').length * 350;
+    return Promise.race([speakInner(text, ttsUrl), new Promise(r => setTimeout(r, limitMs))]);
+  }
+
+  function speakInner(text, ttsUrl) {
+    return new Promise((resolve) => {
+      if (ttsUrl) {
+        const audio = new Audio(ttsUrl);
+        audio.onended = () => resolve();
+        audio.onerror = () => { log('音声の再生に失敗。端末の読み上げに切り替えます', true); speak(text).then(resolve); };
+        audio.play().catch(() => { speak(text).then(resolve); });
+        return;
+      }
+      if (!('speechSynthesis' in window)) { resolve(); return; }
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ja-JP';
+      u.rate = 0.9;
+      u.onend = () => resolve();
+      u.onerror = () => resolve();
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    });
+  }
+
+  async function present(p) {
+    busy = true;
+    $('promptText').textContent = p.text;
+    $('promptTask').textContent = p.task;
+    setReplyButtons(true);
+    setFace(p.expression || 'listen');
+    await speak(p.text, p.ttsUrl);
+    startListening();
+  }
+
+  function recognitionSupported() {
+    return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+  }
+
+  function stopCountdown() {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    $('countdown').textContent = '';
+  }
+
+  function startCountdown() {
+    stopCountdown();
+    let left = LISTEN_SECONDS;
+    $('countdown').textContent = `あと ${left} 秒で「返事なし」`;
+    countdownTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        stopCountdown();
+        stopRecognition();
+        log('20 秒間返事がありませんでした');
+        sendReply(null);
+        return;
+      }
+      $('countdown').textContent = `あと ${left} 秒で「返事なし」`;
+    }, 1000);
+  }
+
+  function stopRecognition() {
+    if (recognition) {
+      try { recognition.onresult = null; recognition.onend = null; recognition.abort(); } catch { /* 無視 */ }
+      recognition = null;
+    }
+  }
+
+  function startListening() {
+    if (!current) return;
+    startCountdown();
+    if (!recognitionSupported() || micBlocked) {
+      log(micBlocked ? 'マイクが使えないため、文字で入れてください' : 'このブラウザは音声認識に対応していません。文字で入れてください');
+      return;
+    }
+    stopRecognition();
+    const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new R();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (ev) => {
+      const text = Array.from(ev.results).map(r => r[0].transcript).join('').trim();
+      if (text) {
+        stopCountdown();
+        stopRecognition();
+        $('replyText').value = text;
+        sendReply(text);
+      }
+    };
+    recognition.onerror = (ev) => {
+      if (ev.error === 'no-speech' || ev.error === 'aborted') return;
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'audio-capture') {
+        // マイクが使えない。聞き直さず、文字の入力と「返事なし」に任せる（20 秒の数えは続ける）
+        micBlocked = true;
+        stopRecognition();
+        log('マイクが使えません（' + ev.error + '）。文字で入れるか「返事なし」を押してください', true);
+        $('listen').disabled = true;
+        return;
+      }
+      log('音声認識のエラー: ' + ev.error, true);
+    };
+    recognition.onend = () => {
+      // 20 秒経つまでは聞き直す（無音で早く切れるブラウザがあるため）
+      if (recognition && countdownTimer && current && !micBlocked) {
+        try { recognition.start(); } catch { /* 無視 */ }
+      }
+    };
+    try { recognition.start(); log('聞き取り中（20 秒）'); } catch (e) { log('音声認識を開始できません: ' + e.message, true); }
+  }
+
+  async function sendReply(text) {
+    if (!current) return;
+    const p = current;
+    stopCountdown();
+    stopRecognition();
+    setReplyButtons(false);
+    const body = text ? { hh: hh(), promptId: p.id, text, source: 'ipad' } : { hh: hh(), promptId: p.id, noAnswer: true, source: 'ipad' };
+    try {
+      const r = await api('POST', '/api/device/reply', body);
+      $('say').textContent = r.say || '';
+      setFace(r.expression);
+      $('followUp').textContent = r.followUp ? `${fmtTime(r.followUp.at)} ${r.followUp.task}` : 'なし';
+      log(`返事を送りました（${text ? '文字' : '返事なし'}）→ turn ${r.turnId}`);
+      if (r.say) await speak(r.say);
+    } catch (e) {
+      log('返事の送信に失敗: ' + e.message, true);
+    } finally {
+      $('replyText').value = '';
+      $('promptText').textContent = '（次の声かけを待っています）';
+      $('promptTask').textContent = '-';
+      busy = false;
+    }
+  }
+
+  function setFace(expr) {
+    const e = EXPR[expr] || EXPR.listen;
+    const face = $('face');
+    face.textContent = e.face;
+    face.className = 'expr-' + (EXPR[expr] ? expr : 'listen');
+    $('exprName').textContent = `${expr || '-'}（${e.name}）`;
+  }
+
+  $('start').addEventListener('click', () => {
+    if (!hh() || !$('token').value.trim()) { log('世帯 ID と端末トークンを入れてください', true); return; }
+    lsSet(LS_HH, hh());
+    lsSet(LS_TOKEN, $('token').value.trim());
+    running = true;
+    $('state').textContent = '動作中';
+    $('start').disabled = true;
+    $('stop').disabled = false;
+    // ユーザー操作の中で一度読み上げを起こしておく（ブラウザの自動再生の制限対策）
+    if ('speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(''); u.lang = 'ja-JP'; speechSynthesis.speak(u); }
+    heartbeat();
+    poll();
+    hbTimer = setInterval(heartbeat, 60_000);
+    pollTimer = setInterval(poll, 5_000);
+    log('開始しました');
+  });
+
+  $('stop').addEventListener('click', () => {
+    running = false;
+    clearInterval(hbTimer); clearInterval(pollTimer);
+    stopCountdown(); stopRecognition();
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    busy = false;
+    $('state').textContent = '停止中';
+    $('start').disabled = false;
+    $('stop').disabled = true;
+    setReplyButtons(false);
+    log('止めました');
+  });
+
+  $('sendText').addEventListener('click', () => {
+    const t = $('replyText').value.trim();
+    if (!t) { log('返事の文字が空です。返事がないときは「返事なし」を押してください', true); return; }
+    sendReply(t);
+  });
+  $('replyText').addEventListener('input', () => { if (countdownTimer) { stopCountdown(); stopRecognition(); } });
+  $('replyText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !$('sendText').disabled) $('sendText').click(); });
+  $('noAnswer').addEventListener('click', () => sendReply(null));
+  $('listen').addEventListener('click', () => startListening());
+})();
+</script>
+</body>
+</html>

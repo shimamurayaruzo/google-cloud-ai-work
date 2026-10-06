@@ -6,3 +6,6 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+dist/
+.env.test
+.mso/

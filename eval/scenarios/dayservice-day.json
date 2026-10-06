@@ -1,0 +1,118 @@
+{
+  "name": "デイの日（docs/03 §4 の台本）",
+  "date": "2026-09-29",
+  "isDayservice": true,
+  "turns": [
+    {
+      "at": "08:00",
+      "task": "greeting",
+      "reply": "うん、まあまあ",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "08:05",
+      "task": "diaper",
+      "reply": "うん、替えた",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "08:15",
+      "task": "teeth",
+      "reply": "はいはい",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "08:25",
+      "task": "face",
+      "reply": null,
+      "expect": {
+        "status": "no_answer"
+      }
+    },
+    {
+      "at": "08:35",
+      "task": "dress",
+      "reply": "まだ",
+      "expect": {
+        "status": "not_yet"
+      }
+    },
+    {
+      "at": "08:40",
+      "task": "face",
+      "reply": "洗ったよ",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "08:45",
+      "task": "dress",
+      "reply": "着替えたよ",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "09:02",
+      "task": "pickup",
+      "reply": "来たよ、行ってきます",
+      "expect": {
+        "status": "done",
+        "notify": "info"
+      }
+    },
+    {
+      "at": "16:00",
+      "task": "return",
+      "reply": "疲れた。腰がちょっと痛い",
+      "expect": {
+        "status": "done",
+        "notify": "urgent"
+      }
+    },
+    {
+      "at": "16:30",
+      "task": "water",
+      "reply": null,
+      "expect": {
+        "status": "no_answer"
+      }
+    },
+    {
+      "at": "19:05",
+      "task": "dinner",
+      "reply": "食べた",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "19:40",
+      "task": "medicine",
+      "reply": "何の薬？"
+    },
+    {
+      "at": "19:43",
+      "task": "medicine",
+      "reply": "飲んだよ",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "21:00",
+      "task": "bedtime",
+      "reply": "はい、おやすみ",
+      "expect": {
+        "status": "done"
+      }
+    }
+  ]
+}
