@@ -155,9 +155,9 @@ test('resolveWebPath: .. や \\ や隠しファイル、未知の拡張子を拒
 });
 
 // ---- ルート ----
-test('GET /healthz → { ok: true }', { skip: skipReason }, async () => {
+test('GET /ping → { ok: true }', { skip: skipReason }, async () => {
   const { ctx } = createCtx();
-  const r = await call(createRouter!(ctx), mockReq({ path: '/healthz' }));
+  const r = await call(createRouter!(ctx), mockReq({ path: '/ping' }));
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, { ok: true });
 });
