@@ -156,7 +156,22 @@ export interface BathState {
   returnAt?: Date;
   /** 返事が無く家族へ check を送った時刻 */
   noAnswerNotifiedAt?: Date;
+  /** 「お風呂から上がりましたか？」を最初に話した時刻 */
+  exitAskedAt?: Date;
+  /** 「上がった」等の返事があった時刻 */
+  exitDoneAt?: Date;
+  /** 上がった／上がったか分からない／まだ入っていたまま終えた、のどれかを家族へ知らせた時刻（二重に送らない） */
+  exitNotifiedAt?: Date;
+  /** 寝室へ戻すとき（/internal/bath-return・nextPrompt の保険）に家族へ知らせる理由。無ければ時間切れ（知らせない） */
+  returnReason?: BathReturnReason;
 }
+
+/**
+ * お風呂を終える理由（台帳 mode_changed の args.reason）。
+ *  manual … 家族の操作  timeout … 時間切れ（知らせない）  exit_done … 「上がった」
+ *  exit_not_yet … 2 回とも「まだ」  exit_unclear … 2 回目が判定できない返事  exit_no_answer … 2 回とも返事なし
+ */
+export type BathReturnReason = 'manual' | 'timeout' | 'exit_done' | 'exit_not_yet' | 'exit_unclear' | 'exit_no_answer';
 
 export interface Whereabouts {
   /** 行き先（例「お仕事」「買い物」） */
@@ -271,8 +286,11 @@ export interface Prompt {
   idleChat?: boolean;
 }
 
-/** start …「お風呂の時間ですね」 wash …「体を洗いましょうか」 wash_recheck … その再確認 teeth …「歯を磨きましょう」 end …「ゆっくり休んでくださいね」 */
-export type BathStep = 'start' | 'wash' | 'wash_recheck' | 'teeth' | 'end';
+/**
+ * start …「お風呂の時間ですね」 wash …「体を洗いましょうか」 wash_recheck … その再確認 teeth …「歯を磨きましょう」
+ * exit …「お風呂から上がりましたか？」（再確認も exit。isRecheck で見分ける） end …「ゆっくり休んでくださいね」
+ */
+export type BathStep = 'start' | 'wash' | 'wash_recheck' | 'teeth' | 'exit' | 'end';
 
 export interface ToolCallRecord {
   name: string;

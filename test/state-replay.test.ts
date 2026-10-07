@@ -99,14 +99,28 @@ test('bath.json（規則）: お風呂モードの台本が全件一致。洗う
   const r = await runScenario(ctx, 'hh_demo', scenario, { withSummary: true });
   assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
   assert.equal(r.passCount, scenario.turns.filter(t => t.expect).length);
-  // 自動の戻り（20:05、by system）がステップとして入る
-  const auto = r.steps.find(s => s.kind === 'mode' && s.modeBy === 'system');
-  assert.ok(auto);
-  assert.equal(auto!.at, '20:05');
-  assert.equal(auto!.mode, 'bedroom');
-  assert.deepEqual(familyNotify.calls.map(c => [c.level, c.origin]), [['info', 'bath'], ['check', 'bath']]);
+  // 「上がりましたか」に「はい」（20:05）→ その場で寝室へ（時間切れの自動の戻りのステップは入らない）
+  const exit = r.steps.find(s => s.at === '20:05' && s.kind === 'turn')!;
+  assert.equal(exit.mode, 'bedroom');
+  assert.deepEqual(exit.notices, ['info: お風呂から上がりました']);
+  assert.ok(!r.steps.some(s => s.kind === 'mode' && s.modeBy === 'system'));
+  assert.deepEqual(familyNotify.calls.map(c => [c.level, c.origin]), [['info', 'bath'], ['info', 'bath'], ['check', 'bath']]);
   assert.ok(!familyNotify.calls.some(c => c.level === 'urgent'));
   assert.equal((await store.getDay('hh_demo', scenario.date))!.l4 ?? null, null);
   assert.equal(tasks.scheduled.filter(s => s.path === '/internal/bath-return').length, 2);
   assert.equal((await store.getHousehold('hh_demo'))!.mode, 'bedroom');
+});
+
+test('bath-no-answer.json（規則）: 洗う無反応 ×2 → check、「上がりましたか」無反応 ×2 → check で寝室へ。L4 にはならない', async () => {
+  const scenario = await load('bath-no-answer');
+  const { ctx, store, familyNotify } = createFakeContext({ turnRunner: new RulesTurnRunner() });
+  const r = await runScenario(ctx, 'hh_demo', scenario);
+  assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
+  assert.equal(r.passCount, scenario.turns.filter(t => t.expect).length);
+  assert.deepEqual(familyNotify.calls.map(c => [c.level, c.reason]), [
+    ['check', 'お風呂で声かけに返事がありません。様子を見に行ってください'],
+    ['check', 'お風呂から上がったか確認できませんでした。様子を見に行ってください'],
+  ]);
+  assert.equal((await store.getDay('hh_demo', scenario.date))!.l4 ?? null, null);
+  assert.equal((await store.getHousehold('hh_demo'))!.modeChangedBy, 'system');
 });

@@ -189,7 +189,10 @@ export function buildNoticeMessage(n: Notice, opts: NoticeMessageOptions = {}): 
       if (quote) lines.push(`お返事: ${quote}`);
     } else {
       title = `${prefix}${LEVEL_MARK.info}${n.reason}`;
-      if (n.task && origin !== 'plan' && origin !== 'device') lines.push(`項目: ${TASK_LABELS[n.task] ?? n.task}`);
+      // お風呂（origin bath）は「体を洗い始めました」「お風呂から上がりました」の両方があるので、項目は「お風呂」とだけ書く
+      if (n.task && origin !== 'plan' && origin !== 'device') {
+        lines.push(`項目: ${origin === 'bath' ? 'お風呂' : (TASK_LABELS[n.task] ?? n.task)}`);
+      }
       const ev = truncate(oneLine(n.evidence ?? ''), origin === 'plan' ? 300 : EVIDENCE_MAX);
       if (ev) lines.push(ev);
     }

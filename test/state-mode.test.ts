@@ -7,8 +7,9 @@ import { createFakeContext } from '../src/state/fakes.js';
 import { ensureDay, expireUnansweredPrompts, nextPrompt, planDay } from '../src/state/day.js';
 import { processReply } from '../src/state/turn.js';
 import {
-  BATH_DONE_SAY, BATH_END_SAY, BATH_NO_ANSWER_REASON, BATH_START_SAY, BATH_TEETH_TEXT, BATH_WASH_RECHECK_TEXT, BATH_WASH_TEXT,
-  IDLE_WATER_TEXT, handleBathReturn, modeOf, switchMode,
+  BATH_DONE_SAY, BATH_END_SAY, BATH_EXIT_DONE_REASON, BATH_EXIT_NO_ANSWER_REASON, BATH_EXIT_NOT_YET_REASON, BATH_EXIT_TEXT,
+  BATH_NO_ANSWER_REASON, BATH_START_SAY, BATH_TEETH_TEXT, BATH_WASH_RECHECK_TEXT, BATH_WASH_TEXT,
+  IDLE_WATER_TEXT, exitReplyStatus, handleBathReturn, modeOf, switchMode,
 } from '../src/state/mode.js';
 import { buildSummary } from '../src/state/summary.js';
 import { jstDate } from '../src/time.js';
@@ -36,6 +37,24 @@ async function bathUntilWash(fake: Fake) {
   const wash = await nextPrompt(fake.ctx, HH, at('19:40'));
   assert.equal(wash!.text, BATH_WASH_TEXT);
   return wash!;
+}
+
+/** 洗う「はい」（19:41）→ 歯磨き（19:56）→「お風呂から上がりましたか？」（20:06）を話したところまで */
+async function bathUntilExit(fake: Fake) {
+  const wash = await bathUntilWash(fake);
+  await processReply(fake.ctx, { hh: HH, promptId: wash.id, replyText: 'はい', source: 'test', now: at('19:41') });
+  const teeth = await nextPrompt(fake.ctx, HH, at('19:56'));
+  assert.equal(teeth!.bathStep, 'teeth');
+  await processReply(fake.ctx, { hh: HH, promptId: teeth!.id, replyText: 'みがいたよ', source: 'test', now: at('19:57') });
+  assert.equal(await nextPrompt(fake.ctx, HH, at('20:05')), null);
+  const exit = await nextPrompt(fake.ctx, HH, at('20:06'));
+  assert.equal(exit!.bathStep, 'exit');
+  assert.equal(exit!.task, 'bath');
+  assert.equal(exit!.text, BATH_EXIT_TEXT);
+  assert.equal(exit!.isRecheck, false);
+  assert.equal(exit!.expectsReply ?? true, true);
+  assert.equal((await fake.store.getHousehold(HH))!.bath!.exitAskedAt!.getTime(), at('20:06').getTime());
+  return exit!;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +102,7 @@ test('お風呂へ切替: 最初の一言（返事を求めない）と 10 分�
   assert.equal((await fake.store.listLedger(HH, THU)).filter(x => x.name === 'mode_changed').length, 1);
 });
 
-test('洗う「はい」→ 家族へ info「体を洗い始めました」、本人には「ゆっくりどうぞ」。15 分後に歯磨き、その 10 分後の戻りを予約', async () => {
+test('洗う「はい」→ 家族へ info「体を洗い始めました」、本人には「ゆっくりどうぞ」。15 分後に歯磨き、その 10 分後に「上がりましたか」、さらに 30 分後の時間切れの戻りを予約', async () => {
   const fake = await setup();
   const wash = await bathUntilWash(fake);
   const r = await processReply(fake.ctx, { hh: HH, promptId: wash.id, replyText: 'はい', source: 'test', now: at('19:41') });
@@ -94,14 +113,18 @@ test('洗う「はい」→ 家族へ info「体を洗い始めました」、�
 
   const h = (await fake.store.getHousehold(HH))!;
   assert.equal(h.bath!.washDoneAt!.getTime(), at('19:41').getTime());
-  assert.equal(h.bath!.returnAt!.getTime(), at('20:06').getTime());
+  assert.equal(h.bath!.returnAt!.getTime(), at('20:36').getTime());
   const teeth = (await fake.store.listPrompts(HH, THU)).find(p => p.bathStep === 'teeth')!;
   assert.equal(teeth.task, 'teeth');
   assert.equal(teeth.text, BATH_TEETH_TEXT);
   assert.equal(teeth.scheduledAt.getTime(), at('19:56').getTime());
+  const exit = (await fake.store.listPrompts(HH, THU)).find(p => p.bathStep === 'exit')!;
+  assert.equal(exit.task, 'bath');
+  assert.equal(exit.text, BATH_EXIT_TEXT);
+  assert.equal(exit.scheduledAt.getTime(), at('20:06').getTime());
   const ret = fake.tasks.scheduled.find(s => s.path === '/internal/bath-return')!;
-  assert.equal(ret.runAt.getTime(), at('20:06').getTime());
-  assert.deepEqual(ret.body, { hh: HH, startedAt: at('19:30').toISOString() });
+  assert.equal(ret.runAt.getTime(), at('20:36').getTime());
+  assert.deepEqual(ret.body, { hh: HH, startedAt: at('19:30').toISOString(), reason: 'timeout' });
   assert.equal((await fake.store.getDay(HH, THU))!.tasks.bath?.state, 'done');
 
   // 歯磨きは記録のみ。通知しない
@@ -134,9 +157,11 @@ test('洗う声かけに返事なし ×2 → 2 分後に再確認、それも無
   assert.equal(day.tasks.bath?.state, 'escalated');
   const h = (await fake.store.getHousehold(HH))!;
   assert.ok(h.bath!.noAnswerNotifiedAt);
-  // 歯磨きは積まず、10 分後に寝室へ戻る予約
+  // 歯磨きは積まず、10 分後に「上がりましたか」（時間切れの戻りはその 30 分後）
   assert.ok(!(await fake.store.listPrompts(HH, THU)).some(p => p.bathStep === 'teeth'));
-  assert.equal(h.bath!.returnAt!.getTime(), at('19:54').getTime());
+  const exit = (await fake.store.listPrompts(HH, THU)).find(p => p.bathStep === 'exit')!;
+  assert.equal(exit.scheduledAt.getTime(), at('19:54').getTime());
+  assert.equal(h.bath!.returnAt!.getTime(), at('20:24').getTime());
 });
 
 test('「まだ」→ 2 分後に 1 回だけ再確認。再確認も「まだ」なら記録して歯磨きと戻りへ進む（通知しない）', async () => {
@@ -210,14 +235,173 @@ test('自動の戻り（/internal/bath-return）: 予約したときのお風呂
   assert.equal((await handleBathReturn(fake.ctx, HH, at('20:01'))).reason, 'not_bath');
 });
 
-test('戻りの予約が届かなくても、nextPrompt が戻りの時刻を過ぎていれば寝室へ戻す', async () => {
+test('戻りの予約が届かなくても、nextPrompt が戻りの時刻を過ぎていれば寝室へ戻す（時間切れは知らせない）', async () => {
   const fake = await setup();
   const wash = await bathUntilWash(fake);
   await processReply(fake.ctx, { hh: HH, promptId: wash.id, replyText: 'はい', source: 'test', now: at('19:41') });
   await nextPrompt(fake.ctx, HH, at('19:56'));   // 歯磨き
-  const p = await nextPrompt(fake.ctx, HH, at('20:09'));
+  // 端末が「上がりましたか」（20:06）を取りに来ないまま、時間切れ（20:36）＋ 2 分を過ぎた
+  const p = await nextPrompt(fake.ctx, HH, at('20:39'));
   assert.equal(modeOf((await fake.store.getHousehold(HH))!), 'bedroom');
   assert.equal(p!.text, BATH_END_SAY);
+  assert.equal((await fake.store.listPrompts(HH, THU)).find(x => x.bathStep === 'exit')!.state, 'expired');
+  assert.deepEqual(fake.familyNotify.calls.map(c => c.reason), ['体を洗い始めました']);
+  const e = (await fake.store.listLedger(HH, THU)).filter(x => x.name === 'mode_changed').at(-1)!;
+  assert.equal((e.args as any).reason, 'timeout');
+});
+
+// ---------------------------------------------------------------------------
+// お風呂から上がったか（2026-10-07 島村さん「お風呂を出るときに LINE で知らせてほしい」）
+// ---------------------------------------------------------------------------
+
+test('「上がりましたか」への返事の分類: はい・上がった・出たよ は done、まだ・入ってる・洗ってる は not_yet', () => {
+  assert.equal(exitReplyStatus('はい', 'done'), 'done');
+  assert.equal(exitReplyStatus('上がったよ', 'unclear'), 'done');
+  assert.equal(exitReplyStatus('出たよ', 'unclear'), 'done');
+  assert.equal(exitReplyStatus('もう出ました', 'unclear'), 'done');
+  assert.equal(exitReplyStatus('まだ', 'not_yet'), 'not_yet');
+  assert.equal(exitReplyStatus('まだ上がってない', 'not_yet'), 'not_yet');
+  assert.equal(exitReplyStatus('入ってる', 'unclear'), 'not_yet');
+  assert.equal(exitReplyStatus('洗ってる', 'done'), 'not_yet');
+  assert.equal(exitReplyStatus(null, 'no_answer'), 'no_answer');
+  assert.equal(exitReplyStatus('（テレビ）出たよ', 'unclear'), 'unclear');
+});
+
+test('上がった「はい」→ 家族へ info「お風呂から上がりました」（時刻と抜粋）、本人には「ゆっくり休んでくださいね」、その場で寝室へ（by system）', async () => {
+  const fake = await setup();
+  const exit = await bathUntilExit(fake);
+  const r = await processReply(fake.ctx, { hh: HH, promptId: exit.id, replyText: '上がったよ', source: 'test', now: at('20:07') });
+  assert.equal(r.turn.classified.status, 'done');
+  assert.equal(r.say, BATH_END_SAY);
+  assert.ok(!/家族/.test(r.say));
+  assert.equal(r.followUp, null);
+  assert.deepEqual(r.notices.map(n => [n.level, n.origin, n.reason]), [['info', 'bath', BATH_EXIT_DONE_REASON]]);
+  const call = fake.familyNotify.calls.at(-1)!;
+  assert.match(call.evidence, /20:07/);
+  assert.match(call.evidence, /上がったよ/);
+
+  const h = (await fake.store.getHousehold(HH))!;
+  assert.equal(modeOf(h), 'bedroom');
+  assert.equal(h.modeChangedBy, 'system');
+  assert.equal(h.bath, null);
+  const e = (await fake.store.listLedger(HH, THU)).filter(x => x.name === 'mode_changed').at(-1)!;
+  assert.equal(e.actor, 'system');
+  assert.equal((e.args as any).reason, 'exit_done');
+  // 「ゆっくり休んでくださいね」は返事への一言で言ったので、終わりの一言は積まない（二重に話さない）
+  assert.ok(!(await fake.store.listPrompts(HH, THU)).some(p => p.bathStep === 'end'));
+  // 時間切れの予約（20:36）が後から届いても何もしない
+  assert.equal((await handleBathReturn(fake.ctx, HH, at('20:36'), at('19:30').toISOString())).reason, 'not_bath');
+  assert.deepEqual(fake.familyNotify.calls.map(c => c.reason), ['体を洗い始めました', BATH_EXIT_DONE_REASON]);
+});
+
+test('上がった「まだ」×2 → 5 分後にもう一度だけ。それも「まだ」なら 10 分後に寝室へ戻し、そのとき info「お風呂モードを終えました（まだ入っているとのことでした）」', async () => {
+  const fake = await setup();
+  const exit = await bathUntilExit(fake);
+  const r1 = await processReply(fake.ctx, { hh: HH, promptId: exit.id, replyText: 'まだ', source: 'test', now: at('20:07') });
+  assert.equal(r1.turn.classified.status, 'not_yet');
+  assert.equal(r1.notices.length, 0);
+  assert.equal(r1.followUp!.at.getTime(), at('20:12').getTime());
+  assert.equal(await nextPrompt(fake.ctx, HH, at('20:11')), null);
+  const re = await nextPrompt(fake.ctx, HH, at('20:12'));
+  assert.equal(re!.bathStep, 'exit');
+  assert.equal(re!.isRecheck, true);
+  assert.equal(re!.text, BATH_EXIT_TEXT);
+
+  const r2 = await processReply(fake.ctx, { hh: HH, promptId: re!.id, replyText: 'まだよ', source: 'test', now: at('20:13') });
+  assert.equal(r2.turn.classified.status, 'not_yet');
+  assert.equal(r2.notices.length, 0);
+  assert.equal(r2.followUp, null);
+  const h = (await fake.store.getHousehold(HH))!;
+  assert.equal(modeOf(h), 'bath');
+  assert.equal(h.bath!.returnAt!.getTime(), at('20:23').getTime());
+  assert.equal(h.bath!.returnReason, 'exit_not_yet');
+  const ret = fake.tasks.scheduled.filter(s => s.path === '/internal/bath-return').at(-1)!;
+  assert.equal(ret.runAt.getTime(), at('20:23').getTime());
+  assert.deepEqual(ret.body, { hh: HH, startedAt: at('19:30').toISOString(), reason: 'exit_not_yet' });
+
+  // 早く届いた予約は何もしない
+  assert.equal((await handleBathReturn(fake.ctx, HH, at('20:15'), at('19:30').toISOString())).reason, 'not_due');
+  // 20:23 の戻り（本番の body には reason があるが、無くても bath.returnReason で同じに動く）
+  const back = await handleBathReturn(fake.ctx, HH, at('20:23'), at('19:30').toISOString());
+  assert.equal(back.switched, true);
+  assert.equal(modeOf(back.household), 'bedroom');
+  assert.equal(back.household.modeChangedBy, 'system');
+  assert.deepEqual([back.notice!.level, back.notice!.origin, back.notice!.reason], ['info', 'bath', BATH_EXIT_NOT_YET_REASON]);
+  const call = fake.familyNotify.calls.at(-1)!;
+  assert.match(call.evidence, /20:07「まだ」/);
+  assert.match(call.evidence, /20:13「まだよ」/);
+  assert.ok(!fake.familyNotify.calls.some(c => c.level !== 'info'));
+  const e = (await fake.store.listLedger(HH, THU)).filter(x => x.name === 'mode_changed').at(-1)!;
+  assert.deepEqual([(e.args as any).reason, (e.args as any).notice], ['exit_not_yet', 'info']);
+  // 寝室に戻ったら「ゆっくり休んでくださいね」
+  assert.equal((await nextPrompt(fake.ctx, HH, at('20:23')))!.text, BATH_END_SAY);
+});
+
+test('上がったか 返事なし ×2 → 2 分後に再確認、それも無ければ check「様子を見に行ってください」で寝室へ戻す。L4 にはしない', async () => {
+  const fake = await setup();
+  const exit = await bathUntilExit(fake);
+  const r1 = await processReply(fake.ctx, { hh: HH, promptId: exit.id, replyText: null, source: 'test', now: at('20:07') });
+  assert.equal(r1.turn.classified.status, 'no_answer');
+  assert.equal(r1.notices.length, 0);
+  assert.equal(r1.say, '');
+  assert.equal(r1.followUp!.at.getTime(), at('20:08').getTime());   // 声かけ（20:06）から 2 分後
+  const re = await nextPrompt(fake.ctx, HH, at('20:08'));
+  assert.equal(re!.bathStep, 'exit');
+  assert.equal(re!.isRecheck, true);
+
+  const r2 = await processReply(fake.ctx, { hh: HH, promptId: re!.id, replyText: null, source: 'test', now: at('20:09') });
+  assert.deepEqual(r2.notices.map(n => [n.level, n.origin, n.reason]), [['check', 'bath', BATH_EXIT_NO_ANSWER_REASON]]);
+  assert.match(fake.familyNotify.calls.at(-1)!.evidence, /20:06 から 2 回/);
+  assert.ok(!fake.familyNotify.calls.some(c => c.level === 'urgent'));
+  const day = (await fake.store.getDay(HH, THU))!;
+  assert.equal(day.l4 ?? null, null);
+  assert.equal(day.tasks.bath?.state, 'escalated');
+  const h = (await fake.store.getHousehold(HH))!;
+  assert.equal(modeOf(h), 'bedroom');
+  assert.equal(h.modeChangedBy, 'system');
+  const e = (await fake.store.listLedger(HH, THU)).filter(x => x.name === 'mode_changed').at(-1)!;
+  assert.equal((e.args as any).reason, 'exit_no_answer');
+  // 返事が無いので一言は言えていない → 寝室に戻ったら「ゆっくり休んでくださいね」
+  assert.equal((await nextPrompt(fake.ctx, HH, at('20:10')))!.text, BATH_END_SAY);
+  assert.deepEqual(fake.familyNotify.calls.map(c => c.level), ['info', 'check']);
+});
+
+test('上がったか: 端末が返事なしを送れなくても /internal/health が 3 分で締め、再確認にも返事が無ければ check', async () => {
+  const fake = await setup();
+  await bathUntilExit(fake);
+  assert.equal(await expireUnansweredPrompts(fake.ctx, HH, at('20:09'), 10), 1);
+  const re = await nextPrompt(fake.ctx, HH, at('20:09'));
+  assert.equal(re!.isRecheck, true);
+  assert.equal(await expireUnansweredPrompts(fake.ctx, HH, at('20:12'), 10), 1);
+  assert.deepEqual(fake.familyNotify.calls.map(c => [c.level, c.reason]), [['info', '体を洗い始めました'], ['check', BATH_EXIT_NO_ANSWER_REASON]]);
+  assert.equal(modeOf((await fake.store.getHousehold(HH))!), 'bedroom');
+});
+
+test('家族が途中で手動で寝室へ戻したときは「お風呂モードを終えました」を送らない（台帳 mode_changed には reason: manual で残す）', async () => {
+  const fake = await setup();
+  const exit = await bathUntilExit(fake);
+  await processReply(fake.ctx, { hh: HH, promptId: exit.id, replyText: 'まだ', source: 'test', now: at('20:07') });
+  const re = await nextPrompt(fake.ctx, HH, at('20:12'));
+  await processReply(fake.ctx, { hh: HH, promptId: re!.id, replyText: 'まだよ', source: 'test', now: at('20:13') });
+  assert.equal((await fake.store.getHousehold(HH))!.bath!.returnReason, 'exit_not_yet');
+
+  const r = await switchMode(fake.ctx, HH, 'bedroom', 'family', at('20:15'));
+  assert.equal(r.changed, true);
+  assert.equal(r.notice, undefined);
+  assert.equal(r.say, BATH_END_SAY);
+  const e = (await fake.store.listLedger(HH, THU)).filter(x => x.name === 'mode_changed').at(-1)!;
+  assert.equal(e.actor, 'member:family');
+  assert.deepEqual([(e.args as any).reason, (e.args as any).notice], ['manual', null]);
+  // 予約してあった 20:23 の戻りが後から届いても何もしない
+  assert.equal((await handleBathReturn(fake.ctx, HH, at('20:23'), at('19:30').toISOString())).reason, 'not_bath');
+  assert.deepEqual(fake.familyNotify.calls.map(c => c.reason), ['体を洗い始めました']);
+
+  // iPad の家族用ボタン（device）でも同じ
+  const dev = await setup();
+  await bathUntilExit(dev);
+  const d = await switchMode(dev.ctx, HH, 'bedroom', 'device', at('20:07'));
+  assert.equal(d.notice, undefined);
+  assert.deepEqual(dev.familyNotify.calls.map(c => c.reason), ['体を洗い始めました']);
 });
 
 test('停止中でも切替はできる（声かけは積まない）', async () => {
