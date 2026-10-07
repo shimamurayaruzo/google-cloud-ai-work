@@ -2,8 +2,10 @@
 // 文言と時刻は docs/03 の表をそのまま入れている。変えるときは docs/03 を先に直す。
 //
 // PlanItem の決まり（この世帯の雛形での使い方）:
-//   recheckMinutes: 0   … 「1回のみ」。再確認しない（state/turn.ts が recheckAllowed=false にする）
-//   escalate: false     … 取れなくても家族へは通知せず、夕方の要約にだけ載せる
+//   recheckMinutes: 0   … 「1回のみ」。再確認しない（state/machine.ts の oneShot。n=1 で asked のまま終わる）
+//   escalate: false     … 取れなくても家族へは通知せず、夕方の要約にだけ載せる（L4 の語・痛みの通知は項目に関係なく出す）
+//   再確認の間隔は criteria v2 で状態機械が決める: 返事なしは 15 分、予定の無い日の「まだ」は 30 分、
+//   デイの日は recheckMinutes をお迎えから逆算して使う（state/plan.ts の recheckIntervalMinutes）
 // 個人情報（LINE の userId、メールアドレス）はここに書かない。家族画面の設定から入れる。
 
 import { config } from '../config.js';
@@ -69,10 +71,16 @@ export function defaultHousehold(id: HouseholdId = config.defaultHouseholdId): H
       pickupTime: '09:00',
     },
     policy: {
+      // recheckOnce は互換のため残す。maxRechecks があればそちらが優先（criteria v2 5 節: 初回＋再確認 2 回 = 計 3 回）
       recheckOnce: true,
+      maxRechecks: 2,
       recheckMinutes: 15,
+      // 通知を翌朝に回す時間帯（L2/L3）
       quietHours: { from: '21:30', to: '07:30' },
+      // 就寝時間帯（声かけをしない・無反応判定の対象外。criteria 3-3 ★8。21:00 の声かけは含めない）
+      sleepHours: { from: '21:30', to: '07:30' },
     },
+    // 通知文に書く連絡先（家の電話・近くの人）は個人情報なのでここには書かない。家族画面の設定から入れる
     killSwitch: false,
   };
 }

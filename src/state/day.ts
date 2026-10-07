@@ -10,9 +10,11 @@ import {
 import { NotFoundError } from './errors.js';
 import { currentDegraded, recordIncident } from '../ops/health.js';
 import { appendLedger } from './ledger.js';
+import { currentL4, reassuranceDue } from './l4.js';
 import { emptyRecord, transition } from './machine.js';
-import { defaultPromptText, findPlanItem, resolvePlan } from './plan.js';
+import { defaultPromptText, findPlanItem, inSleepHours, resolvePlan } from './plan.js';
 import { processReply } from './turn.js';
+import { REASSURANCE_SAY } from '../agent/rules.js';
 
 /** 計画を作るとき、これより前に過ぎた声かけは話さない（expired で作る）。朝の計画が遅れて走ったときの一斉発話を防ぐ */
 const STALE_PLAN_MINUTES = 30;
@@ -78,7 +80,9 @@ export async function planDay(
 
   const household = await requireHousehold(ctx, hh);
   const staleBefore = addMinutes(now, -STALE_PLAN_MINUTES).getTime();
-  const prompts: Prompt[] = day.plan.map(item => {
+  // 就寝時間帯（criteria 3-3 ★8）の声かけは作らない
+  const items = day.plan.filter(item => !inSleepHours(household, jstDate(date, item.time)));
+  const prompts: Prompt[] = items.map(item => {
     const scheduledAt = jstDate(date, item.time);
     return {
       id: newId('pr'),
@@ -93,7 +97,7 @@ export async function planDay(
   });
   for (const p of prompts) await ctx.store.putPrompt(p);
 
-  const lines = day.plan.map(i => `${i.time} ${TASK_LABELS[i.task]}`);
+  const lines = items.map(i => `${i.time} ${TASK_LABELS[i.task]}`);
   await appendLedger(ctx, {
     hh, date, at: now, kind: 'plan', name: 'plan_proposed',
     args: { isDayservice: day.isDayservice, items: day.plan.map(i => ({ time: i.time, task: i.task })) },
@@ -189,33 +193,55 @@ export async function deliverPrompt(
     state: 'delivered', deliveredAt: now, ...(ttsUrl ? { ttsUrl } : {}),
   });
 
-  const day = await ensureDay(ctx, hh, date);
-  const { next } = transition(day.tasks[prompt.task], {
-    type: 'asked', promptId: prompt.id, at: now, isRecheck: prompt.isRecheck,
-  });
-  await ctx.store.setTask(hh, date, prompt.task, next);
+  // 安心文と痛みの聞き直しは確認項目の一巡ではないので、状態機械を動かさない
+  if (!prompt.isReassurance && !prompt.followup) {
+    const day = await ensureDay(ctx, hh, date);
+    const { next } = transition(day.tasks[prompt.task], {
+      type: 'asked', promptId: prompt.id, at: now, isRecheck: prompt.isRecheck,
+    });
+    await ctx.store.setTask(hh, date, prompt.task, next);
+  }
 
   await appendLedger(ctx, {
     hh, date, at: now, kind: 'prompt', name: 'prompt_sent',
-    args: { promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck, text: prompt.text },
+    args: {
+      promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck, text: prompt.text,
+      ...(prompt.isReassurance ? { isReassurance: true } : {}), ...(prompt.followup ? { followup: true } : {}),
+    },
   });
-  logEvent('prompt_sent', { hh, date, promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck });
+  logEvent('prompt_sent', { hh, date, promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck, isReassurance: prompt.isReassurance ?? false });
   return delivered;
 }
 
 /**
  * 端末が「次に話す声かけ」を取りに来たとき（GET /api/device/next-prompt）。
- * 今日の期限が来た queued の先頭を delivered にして返す。killSwitch なら null。
+ * 今日の期限が来た queued の先頭を delivered にして返す。killSwitch なら null（L4 の安心文も出さない）。
+ * - L4 モード中（day.l4）: 通常の声かけは出さず、3 分ごとに安心文（isReassurance）だけを返す。
+ *   該当の通知が acked / closed になっていたら解除して通常に戻る（state/l4.ts）
+ * - 就寝時間帯（policy.sleepHours）: 通常の声かけは出さない。期限が来た声かけは話さずに expired にする
  * 再確認の声かけで、その項目が既に rechecking でなくなっていれば（済んだ等）話さずに expired にする。
  */
 export async function nextPrompt(ctx: AppContext, hh: HouseholdId, now: Date): Promise<Prompt | null> {
   const household = await requireHousehold(ctx, hh);
   if (household.killSwitch) return null;
   const date = dateKey(now);
+  const day = await ensureDay(ctx, hh, date);
+
+  const l4 = await currentL4(ctx, hh, date, day, now);
+  if (l4) return nextReassurance(ctx, hh, date, l4, now);
+
   const due = await ctx.store.listDuePrompts(hh, date, now);
   if (due.length === 0) return null;
-  const day = await ensureDay(ctx, hh, date);
+  if (inSleepHours(household, now)) {
+    for (const p of due) await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
+    logEvent('prompts_expired_sleep_hours', { hh, date, count: due.length });
+    return null;
+  }
   for (const p of due) {
+    if (p.isReassurance) {
+      await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
+      continue;
+    }
     if (p.isRecheck && day.tasks[p.task]?.state !== 'rechecking') {
       await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
       continue;
@@ -223,6 +249,24 @@ export async function nextPrompt(ctx: AppContext, hh: HouseholdId, now: Date): P
     return deliverPrompt(ctx, p, now, { synthesize: true });
   }
   return null;
+}
+
+/** L4 モードの安心文。直近の安心文（無ければ L4 を立てた時刻）から 3 分以上たっていれば 1 つ作って話す */
+async function nextReassurance(
+  ctx: AppContext, hh: HouseholdId, date: DateKey, l4: NonNullable<Day['l4']>, now: Date,
+): Promise<Prompt | null> {
+  const prompts = await ctx.store.listPrompts(hh, date);
+  const last = prompts
+    .filter(p => p.isReassurance && p.deliveredAt)
+    .map(p => new Date(p.deliveredAt!))
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  if (!reassuranceDue(l4, last, now)) return null;
+  const prompt: Prompt = {
+    id: newId('pr'), hh, date, task: l4.task ?? 'greeting', text: REASSURANCE_SAY,
+    scheduledAt: now, isRecheck: false, state: 'queued', expression: 'worry', isReassurance: true,
+  };
+  await ctx.store.putPrompt(prompt);
+  return deliverPrompt(ctx, prompt, now, { synthesize: true });
 }
 
 /**
@@ -239,8 +283,15 @@ export async function expireUnansweredPrompts(
   const limit = addMinutes(now, -olderThanMinutes).getTime();
   const stale = (await ctx.store.listPrompts(hh, date))
     .filter(p => p.state === 'delivered' && (p.deliveredAt ?? p.scheduledAt).getTime() <= limit);
+  const household = await requireHousehold(ctx, hh);
+  const sleeping = inSleepHours(household, now);
   let n = 0;
   for (const p of stale) {
+    // 安心文は質問ではない。就寝時間帯は無反応判定の対象外（criteria 3-3）。どちらも返事なしとして扱わない
+    if (p.isReassurance || sleeping) {
+      await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
+      continue;
+    }
     try {
       await processReply(ctx, { hh, date, promptId: p.id, replyText: null, source: 'ipad', now });
       n += 1;

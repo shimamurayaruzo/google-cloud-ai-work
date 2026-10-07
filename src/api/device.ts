@@ -31,6 +31,8 @@ export function promptForDevice(p: Prompt | null) {
     text: p.text,
     ...(p.ttsUrl ? { ttsUrl: p.ttsUrl } : {}),
     expression: p.expression,
+    // L4 モードの安心文。質問ではないので、端末は返事を待たずに読み上げるだけでよい
+    ...(p.isReassurance ? { isReassurance: true } : {}),
   };
 }
 

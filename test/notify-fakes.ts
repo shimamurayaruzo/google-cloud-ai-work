@@ -6,7 +6,7 @@ import type {
   InternalPath, Notifier, OutboundMessage, ScheduledTask, SendResult, TaskScheduler,
 } from '../src/services.js';
 import type {
-  Channel, HealthDay, Household, LedgerEntry, Member, Notice,
+  Channel, Day, HealthDay, Household, LedgerEntry, Member, Notice,
 } from '../src/types.js';
 
 export class FakeStore {
@@ -14,6 +14,14 @@ export class FakeStore {
   notices = new Map<string, Notice>();
   ledger: LedgerEntry[] = [];
   health = new Map<string, HealthDay>();
+  days = new Map<string, Day>();
+
+  async getDay(hh: string, date: string) { return structuredClone(this.days.get(`${hh}/${date}`) ?? null); }
+  async updateDay(hh: string, date: string, patch: Partial<Day>) {
+    const cur = this.days.get(`${hh}/${date}`);
+    if (!cur) throw new Error(`day not found: ${hh}/${date}`);
+    this.days.set(`${hh}/${date}`, { ...cur, ...structuredClone(patch) });
+  }
 
   async getHousehold(hh: string) { return structuredClone(this.households.get(hh) ?? null); }
   async putNotice(n: Notice) { this.notices.set(n.id, structuredClone(n)); }

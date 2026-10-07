@@ -2,6 +2,8 @@
 //   createNotifier()     … LINE / メール / Slack(運用専用) の薄い層
 //   createFamilyNotify() … notices の一生（open → waiting → acked / escalated、静かな時間帯は deferred）
 // 家族への通知は「自動」の権限段階（docs/01 §6.1）。本人の返事の全文は載せない（evidence は 80 文字まで）。
+// criteria v2: info（L2）は 1 日 5 件まで（超えたら deferred / daily_cap。夕方の要約にまとめ、翌朝には送らない）。
+// 「確認した」に「誤報だった」を付けられる（ack の opts.falseAlarm）。誤報は day.signals.falseAlarmCount に数える。
 
 import { config } from '../config.js';
 import { logError, logEvent, logWarn } from '../log.js';
@@ -12,27 +14,33 @@ import type {
 import type { Store } from '../store/types.js';
 import { toDate } from '../store/types.js';
 import {
-  addMinutes, dateKey, hhmm, inQuietHours, jstDate, shiftDateKey, type Clock,
+  addMinutes, dateKey, hhmm, hm, inQuietHours, jstDate, shiftDateKey, type Clock,
 } from '../time.js';
 import type {
-  Channel, Household, HouseholdId, LedgerEntry, Member, Notice, NoticeLevel, NoticeStep,
+  Channel, Household, HouseholdId, LedgerEntry, Member, Notice, NoticeLevel, NoticeOrigin, NoticeStep,
 } from '../types.js';
+import { L4_SAY, REASSURANCE_SAY } from '../agent/rules.js';
 import { newId, TASK_LABELS } from '../types.js';
 import { sendEmail } from './email.js';
 import { sendLine } from './line.js';
 import { maskEmail, maskId, truncate } from './mask.js';
 import { sendSlack } from './slack.js';
 
-export { parseAckPostback, ackPostbackData } from './line.js';
+export { parseAckPostback, parseNoticePostback, ackPostbackData, falseAlarmPostbackData } from './line.js';
 
 // ---------------------------------------------------------------------------
-// 文面
+// 文面（report-design v2 2 節の型）
+//   L2【お知らせ】… 返信不要の一文を末尾に
+//   L3【確認をお願いします】HH:MM … 原文（80 文字まで）、何が AI から分からないか、具体的な行動 1 つ、「話せたら『確認した』」
+//   L4【至急】HH:MM … 何が起きたか、本人に伝えている定型文、電話を促す。
+//        L4 の語由来は「必要と思われたら 119 番へ」、無反応由来は ①家の電話 ②iPad の呼びかけ ③近くの人（119 には触れない）
+// 住所・持病・薬は通知本文に載せない（report-design 0 節）。
 // ---------------------------------------------------------------------------
 
 const LEVEL_MARK: Record<NoticeLevel, string> = {
-  urgent: '🔴 緊急',
-  check: '🟡 確認してほしい',
-  info: '🟢 お知らせ',
+  urgent: '【至急】',
+  check: '【確認をお願いします】',
+  info: '【お知らせ】',
 };
 
 export function levelMark(level: NoticeLevel): string {
@@ -41,16 +49,154 @@ export function levelMark(level: NoticeLevel): string {
 
 /** evidence の最大文字数（本人の言葉を丸ごと載せない） */
 export const EVIDENCE_MAX = 80;
+/** 「今日の様子」は全文を送る（本人の言葉は要約側で 20〜40 文字の抜粋にしてある） */
+const SUMMARY_EVIDENCE_MAX = 4000;
+/** 1 日の L2（info）の上限（criteria 5 節 ★11）。今日の様子・計画・端末の沈黙は数えない */
+export const DAILY_INFO_CAP = 5;
+const CAP_EXEMPT: ReadonlySet<NoticeOrigin> = new Set(['summary', 'plan', 'device']);
 
-/** 通知の文面。title = 印＋reason、body = evidence（80 文字まで）＋「家族画面で確認」 */
-export function buildNoticeMessage(n: Notice, opts: { resend?: boolean } = {}): OutboundMessage {
+export function countsTowardInfoCap(n: { level: NoticeLevel; origin?: NoticeOrigin }): boolean {
+  return n.level === 'info' && !CAP_EXEMPT.has(n.origin ?? 'other');
+}
+
+const NO_REPLY_NEEDED = 'この通知への返信は不要です。';
+const PRESS_ACK = '話せたら「確認した」を押してください。';
+const UNCERTAIN_LINE = '判定は未確定です（AI の確信度が低いため、念のためお知らせします）。';
+
+export interface NoticeMessageOptions {
+  resend?: boolean;
+  /** 呼び方（callName）・連絡先（contacts）・就寝時間帯を文面に使う */
+  household?: Household | null;
+}
+
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function firstSentence(s: string): string {
+  const i = s.indexOf('。');
+  return (i >= 0 ? s.slice(0, i) : s).trim();
+}
+
+function quoteOf(n: Notice): string {
+  return truncate(oneLine(n.evidence ?? '').replace(/^「|」$/g, ''), EVIDENCE_MAX);
+}
+
+/** 通知の文面。title は段階の印と時刻、body は report-design 2 節の型 */
+export function buildNoticeMessage(n: Notice, opts: NoticeMessageOptions = {}): OutboundMessage {
   const prefix = opts.resend ? '【再送】' : '';
-  const title = `${prefix}${levelMark(n.level)}：${n.reason}`;
+  const h = opts.household ?? null;
+  const callName = h?.person?.callName?.trim() || 'ご本人';
+  const homePhone = h?.contacts?.homePhone?.trim();
+  const nearby = h?.contacts?.nearby;
+  const createdAt = n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt);
+  const time = hm(createdAt);
+  const quote = quoteOf(n);
+  const origin: NoticeOrigin = n.origin ?? 'other';
   const lines: string[] = [];
-  if (n.task) lines.push(`項目: ${TASK_LABELS[n.task] ?? n.task}`);
-  const evidence = truncate(n.evidence.replace(/\s+/g, ' ').trim(), EVIDENCE_MAX);
-  if (evidence) lines.push(evidence);
-  lines.push('くわしくは家族画面で確認してください。');
+  let title: string;
+
+  if (n.level === 'info' && origin === 'summary') {
+    // 今日の様子: 1 行目（見出し）を題に、残りを本文に
+    const text = (n.evidence ?? '').trim();
+    const [head, ...rest] = text.split('\n');
+    title = `${prefix}${head || n.reason}`;
+    const msg: OutboundMessage = { title, body: rest.join('\n').trim(), noticeId: n.id };
+    if (config.serviceUrl) msg.url = `${config.serviceUrl.replace(/\/$/, '')}/`;
+    return msg;
+  }
+
+  if (n.level === 'urgent') {
+    title = `${prefix}${LEVEL_MARK.urgent}${time}`;
+    if (origin === 'no_answer') {
+      lines.push(`${firstSentence(n.reason)}。`);
+      lines.push(`まず①家の電話${homePhone ? `（${homePhone}）` : ''}にかけて、声を聞いてください。②iPad の通話ボタンで呼びかけてください（スピーカーから大きな音が出ます）。`);
+      if (nearby?.name && nearby.phone) lines.push(`次に③近くの ${nearby.name}さん（電話 ${nearby.phone}）に見に行ってもらってください。`);
+      lines.push(`iPad からは 3 分ごとに「${REASSURANCE_SAY}」とだけ伝えています。`);
+      lines.push('お返事がない理由（昼寝・入浴・聞こえなかった等）は、AI からは分かりません。');
+    } else {
+      lines.push(quote
+        ? `${time} の声かけに、${callName}が「${quote}」とおっしゃいました。`
+        : `${time} ${n.reason}。`);
+      if (origin === 'fire') lines.push('火事・煙の可能性があります。');
+      lines.push(`AI は「${L4_SAY}」と一度お伝えし、これ以上は質問をせず、3 分ごとに「${REASSURANCE_SAY}」とだけ伝えています。`);
+      lines.push('どの程度か、動けるかは、AI からは分かりません。');
+      if (n.uncertain) lines.push(UNCERTAIN_LINE);
+      lines.push(homePhone ? `お電話（家の電話 ${homePhone}）で声を聞いてください。` : 'お電話で声を聞いてください。');
+      lines.push(origin === 'fire' ? '火事・煙のときは 119 番へ。' : '必要と思われたら 119 番へ。');
+    }
+    if (origin === 'no_answer' && n.uncertain) lines.push(UNCERTAIN_LINE);
+  } else if (n.level === 'check') {
+    title = `${prefix}${LEVEL_MARK.check}${time}`;
+    const call = homePhone ? `家の電話（${homePhone}）にかけてみてください。` : 'お電話で声を聞いてください。';
+    switch (origin) {
+      case 'pain':
+      case 'pain_followup': {
+        if (origin === 'pain_followup') lines.push(`${n.reason.split('。')[0]}。`);
+        if (quote) lines.push(`${callName}が「${quote}」とおっしゃいました。`);
+        else if (origin === 'pain') lines.push(`${callName}が${firstSentence(n.reason)}。`);
+        lines.push('どの程度痛いか、動けるかは、AI からは分かりません。');
+        if (n.uncertain) lines.push(UNCERTAIN_LINE);
+        lines.push(`お早めに${call}`);
+        lines.push(PRESS_ACK);
+        if (origin === 'pain') {
+          const followAt = addMinutes(createdAt, 180);
+          const sleeping = h ? inQuietHours(followAt, h.policy?.sleepHours ?? { from: '21:30', to: '07:30' }) : false;
+          if (!sleeping && dateKey(followAt) === dateKey(createdAt)) {
+            lines.push(`3 時間ほど後（${hm(followAt)} ごろ）に一度、様子を聞き直してお知らせします。`);
+          }
+        }
+        break;
+      }
+      case 'no_answer':
+        lines.push(`${firstSentence(n.reason)}。`);
+        lines.push('お返事がない理由（昼寝・入浴・聞こえなかった等）は、AI からは分かりません。');
+        if (n.uncertain) lines.push(UNCERTAIN_LINE);
+        lines.push(`家の電話${homePhone ? `（${homePhone}）` : ''}にかけてみてください。`);
+        lines.push(PRESS_ACK);
+        lines.push('次の声かけ（15 分後）でもお返事がなければ、あらためてお知らせします。');
+        break;
+      case 'not_done':
+        lines.push(`${firstSentence(n.reason)}。`);
+        if (quote) lines.push(`お返事: ${quote}`);
+        lines.push('実際にできたかどうかは、AI からは分かりません。');
+        if (n.uncertain) lines.push(UNCERTAIN_LINE);
+        lines.push(call);
+        lines.push(PRESS_ACK);
+        break;
+      case 'contact':
+        lines.push(quote ? `${callName}から「${quote}」と頼まれました（こちらからは連絡していません）。` : `${n.reason}。`);
+        if (n.uncertain) lines.push(UNCERTAIN_LINE);
+        lines.push(`ご都合のよいときに、${call}`);
+        lines.push(PRESS_ACK);
+        break;
+      default:
+        lines.push(`${oneLine(n.reason)}${/[。）]$/.test(n.reason) ? '' : '。'}`);
+        if (quote) lines.push(`根拠: ${quote}`);
+        lines.push('それ以上のことは、AI からは分かりません。');
+        if (n.uncertain) lines.push(UNCERTAIN_LINE);
+        lines.push(call);
+        lines.push(PRESS_ACK);
+    }
+  } else {
+    title = `${prefix}${LEVEL_MARK.info}`;
+    if (origin === 'repeat') {
+      lines.push(oneLine(n.reason));
+      if (quote) lines.push(quote);
+      lines.push('夕方の「今日の様子」にも載せます。');
+    } else if (origin === 'not_done') {
+      lines.push(`${firstSentence(n.reason)}。`);
+      if (quote) lines.push(`お返事: ${quote}`);
+    } else {
+      title = `${prefix}${LEVEL_MARK.info}${n.reason}`;
+      if (n.task && origin !== 'plan' && origin !== 'device') lines.push(`項目: ${TASK_LABELS[n.task] ?? n.task}`);
+      const ev = truncate(oneLine(n.evidence ?? ''), origin === 'plan' ? 300 : EVIDENCE_MAX);
+      if (ev) lines.push(ev);
+    }
+    if (n.uncertain) lines.push(UNCERTAIN_LINE);
+    lines.push(NO_REPLY_NEEDED);
+  }
+
   const msg: OutboundMessage = { title, body: lines.join('\n'), noticeId: n.id };
   if (config.serviceUrl) msg.url = `${config.serviceUrl.replace(/\/$/, '')}/`;
   return msg;
@@ -147,9 +293,9 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
 
   /** 1 人に、使えるチャネルを順に試す。step を 1 つ作って返す（全部失敗なら error 付き） */
   async function sendToMember(
-    n: Notice, member: Member, channels: Channel[], now: Date, resend: boolean,
+    n: Notice, member: Member, channels: Channel[], now: Date, resend: boolean, household: Household | null,
   ): Promise<{ step: NoticeStep; ok: boolean }> {
-    const msg = buildNoticeMessage(n, { resend });
+    const msg = buildNoticeMessage(n, { resend, household });
     const errors: string[] = [];
     let realError = false;
     let lastChannel: Channel = channels[0] ?? 'email';
@@ -182,6 +328,17 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
     return { step: { memberId: member.id, channel: lastChannel, sentAt: now, ackedAt: null, error: detail }, ok: false };
   }
 
+  /** 「誤報だった」をその通知の日の signals.falseAlarmCount に数える（変化評価と夕方の要約の材料） */
+  async function countFalseAlarm(hh: HouseholdId, date: string): Promise<void> {
+    try {
+      const day = await store.getDay(hh, date);
+      if (!day) return;
+      await store.updateDay(hh, date, { signals: { ...day.signals, falseAlarmCount: (day.signals.falseAlarmCount ?? 0) + 1 } });
+    } catch (e) {
+      logError('false_alarm_count_error', e, { hh, date });
+    }
+  }
+
   async function scheduleEscalate(n: Notice, waitMinutes: number, now: Date): Promise<void> {
     const runAt = addMinutes(now, Math.max(1, waitMinutes));
     try {
@@ -198,14 +355,16 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
    * 届いた人がいれば waiting にして、その人の waitMinutes 後に /internal/escalate を予約する。
    * 誰にも届かなければ最後の人の waitMinutes 後に予約する（escalate が全員への再送＝再試行になる）。
    */
-  async function deliverFrom(n: Notice, members: Member[], start: number, now: Date, ledgerDate: string): Promise<Notice> {
+  async function deliverFrom(
+    n: Notice, members: Member[], start: number, now: Date, ledgerDate: string, household: Household | null,
+  ): Promise<Notice> {
     const steps = [...n.steps];
     let delivered: Member | null = null;
     let last: Member | null = null;
     for (let i = start; i < members.length && !delivered; i++) {
       const member = members[i];
       last = member;
-      const { step, ok } = await sendToMember(n, member, notifier.channelsFor(member), now, false);
+      const { step, ok } = await sendToMember(n, member, notifier.channelsFor(member), now, false, household);
       steps.push(step);
       await ledger({
         hh: n.hh, date: ledgerDate, at: now, actor: 'agent', kind: 'notice', name: 'notice_sent',
@@ -217,7 +376,8 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
     }
     await save(n, { steps, state: 'waiting' });
     const waitFor = delivered ?? last;
-    if (waitFor) await scheduleEscalate(n, waitFor.waitMinutes, now);
+    // L2（info）は返信を求めないので、次の人への段階上げを予約しない（criteria 1 節）。届かなかったときだけ再試行する
+    if (waitFor && (n.level !== 'info' || !delivered)) await scheduleEscalate(n, waitFor.waitMinutes, now);
     logEvent('notice_sent', {
       hh: n.hh, noticeId: n.id, level: n.level, delivered: Boolean(delivered), memberId: waitFor?.id,
     });
@@ -238,11 +398,11 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
       });
       return n;
     }
-    return deliverFrom(n, members, 0, now, ledgerDate);
+    return deliverFrom(n, members, 0, now, ledgerDate, household);
   }
 
   /** 全員未確認: 全員にメールで再送し escalated（メールが使えない人は LINE で再送） */
-  async function finalEscalate(n: Notice, members: Member[], now: Date): Promise<Notice> {
+  async function finalEscalate(n: Notice, members: Member[], now: Date, household: Household | null): Promise<Notice> {
     const steps = [...n.steps];
     let deliveredCount = 0;
     for (const member of members) {
@@ -250,7 +410,7 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
       if (member.email) channels.push('email');
       if (member.line?.userId) channels.push('line');
       if (channels.length === 0) channels.push('email');
-      const { step, ok } = await sendToMember(n, member, channels, now, true);
+      const { step, ok } = await sendToMember(n, member, channels, now, true, household);
       steps.push(step);
       if (ok) deliveredCount++;
     }
@@ -267,6 +427,8 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
 
   function isSameItem(n: Notice, req: NotifyRequest): boolean {
     if (n.level !== req.level || !ACTIVE_STATES.has(n.state)) return false;
+    // 由来が違えば別の通知（例: 同じ帰宅の項目で「痛み」と「連絡の依頼」）
+    if ((n.origin ?? 'other') !== (req.origin ?? 'other')) return false;
     // 項目があれば項目で、無ければ（端末の沈黙など）reason で同じものとみなす
     return req.task ? n.task === req.task : !n.task && n.reason === req.reason;
   }
@@ -274,7 +436,8 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
   return {
     async notify(req: NotifyRequest): Promise<Notice> {
       const { hh, now } = req;
-      const existing = (await store.listNotices(hh, req.date)).find(n => isSameItem(n, req));
+      const todays = await store.listNotices(hh, req.date);
+      const existing = todays.find(n => isSameItem(n, req));
       if (existing) {
         logEvent('notice_deduped', { hh, noticeId: existing.id, level: req.level, task: req.task ?? null });
         return existing;
@@ -289,17 +452,38 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
         date: req.date,
         level: req.level,
         reason: req.reason,
-        evidence: truncate(req.evidence ?? '', EVIDENCE_MAX),
+        evidence: truncate(req.evidence ?? '', req.origin === 'summary' ? SUMMARY_EVIDENCE_MAX : EVIDENCE_MAX),
         turnId: req.turnId ?? null,
         steps: [],
         state: 'open',
         createdAt: now,
       };
       if (req.task) notice.task = req.task;
+      if (req.origin) notice.origin = req.origin;
+      if (req.uncertain) notice.uncertain = true;
+
+      // L2（info）は 1 日 5 件まで。超えた分は送らず、夕方の「お知らせの続き」にまとめる（criteria 5 節 ★11）
+      if (countsTowardInfoCap(notice)) {
+        const sent = todays.filter(n => countsTowardInfoCap(n) && n.state !== 'deferred').length;
+        if (sent >= DAILY_INFO_CAP) {
+          notice.state = 'deferred';
+          notice.deferredReason = 'daily_cap';
+          await store.putNotice(notice);
+          await ledger({
+            hh, date: req.date, at: now, actor: 'agent', kind: 'notice', name: 'notice_sent',
+            args: { level: notice.level, reason: notice.reason, memberId: null, channel: null },
+            result: { delivered: false, reason: 'daily_cap', sentToday: sent },
+            noticeId: notice.id, turnId: notice.turnId,
+          });
+          logEvent('notice_deferred', { hh, noticeId: notice.id, level: notice.level, reason: 'daily_cap' });
+          return notice;
+        }
+      }
 
       const quiet = household?.policy?.quietHours;
       if (req.level !== 'urgent' && quiet && inQuietHours(now, quiet)) {
         notice.state = 'deferred';
+        notice.deferredReason = 'quiet_hours';
         notice.deferredUntil = quietHoursEnd(now, quiet);
         await store.putNotice(notice);
         await ledger({
@@ -316,9 +500,10 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
       return deliver(notice, household, now, req.date);
     },
 
-    async ack(hh, noticeId, memberId, now) {
+    async ack(hh, noticeId, memberId, now, opts) {
       const n = await store.getNotice(hh, noticeId);
       if (!n) return null;
+      const newlyFalseAlarm = opts?.falseAlarm === true && !n.falseAlarm;
       const steps = n.steps.map(s => ({ ...s }));
       let idx = -1;
       for (let i = steps.length - 1; i >= 0; i--) {
@@ -327,14 +512,15 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
       if (idx < 0) idx = steps.length - 1;
       if (idx >= 0 && !steps[idx].ackedAt) steps[idx].ackedAt = now;
       const wasAcked = n.state === 'acked';
-      await save(n, { steps, state: 'acked', ackedBy: n.ackedBy ?? memberId });
-      if (!wasAcked) {
+      await save(n, { steps, state: 'acked', ackedBy: n.ackedBy ?? memberId, ...(newlyFalseAlarm ? { falseAlarm: true } : {}) });
+      if (!wasAcked || newlyFalseAlarm) {
         await ledger({
           hh, date: dateKey(now), at: now, actor: `member:${memberId}`, kind: 'notice', name: 'notice_acked',
-          args: { memberId }, result: { state: 'acked' }, noticeId, turnId: n.turnId,
+          args: { memberId, falseAlarm: n.falseAlarm === true }, result: { state: 'acked' }, noticeId, turnId: n.turnId,
         });
-        logEvent('notice_acked', { hh, noticeId, memberId });
+        logEvent('notice_acked', { hh, noticeId, memberId, falseAlarm: n.falseAlarm === true });
       }
+      if (newlyFalseAlarm) await countFalseAlarm(hh, n.date);
       return n;
     },
 
@@ -350,14 +536,16 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
       const tried = new Set(n.steps.map(s => s.memberId));
       const maxOrder = Math.max(-Infinity, ...members.filter(m => tried.has(m.id)).map(m => m.order));
       const nextIndex = members.findIndex(m => m.order > maxOrder && !tried.has(m.id));
-      if (nextIndex >= 0) return deliverFrom(n, members, nextIndex, now, dateKey(now));
+      if (nextIndex >= 0) return deliverFrom(n, members, nextIndex, now, dateKey(now), household);
       if (members.length === 0) return n;
-      return finalEscalate(n, members, now);
+      return finalEscalate(n, members, now, household);
     },
 
     async flushDeferred(hh, now) {
       const due = (await store.listOpenNotices(hh))
         .filter(n => n.state === 'deferred')
+        // 1 日の上限で回した L2 は翌朝に送らない（その日の夕方の要約に載せてある）
+        .filter(n => n.deferredReason !== 'daily_cap')
         .filter(n => {
           const until = toDate(n.deferredUntil);
           return !until || until.getTime() <= now.getTime();

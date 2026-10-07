@@ -9,7 +9,8 @@ import type { Day, Household, Prompt, TaskKey } from '../src/types.js';
 import type { Intent, TurnInput, TurnOutcome } from '../src/services.js';
 import { jstDate } from '../src/time.js';
 import {
-  AdkTurnRunner, RulesTurnRunner, analyzeReply, buildInstruction, decidePermission, detectUrgent, postProcess, recheckMinutesFor,
+  AdkTurnRunner, RulesTurnRunner, analyzeReply, buildInstruction, decidePermission, detectL4, detectMildDiscomfort, detectPain,
+  detectUrgent, postProcess, recheckMinutesFor, L4_SAY,
 } from '../src/agent/index.js';
 
 // ---- 最小のフィクスチャ ----
@@ -73,15 +74,55 @@ test('着替えたよ → done、再確認なし', async () => {
   assert.equal(of(o, 'recheck').length, 0);
 });
 
-test('腰が痛い → notify(urgent)、表情は worry、同じ確認は繰り返さない', async () => {
+test('腰が痛い → notify(check・痛み) と 3 時間後の聞き直し。表情は worry、同じ確認は繰り返さない（criteria 3-2 ★6）', async () => {
   const o = await rules.run(input('return', '疲れた。ちょっと腰が痛いの', { at: '16:00', promptText: 'おかえりなさい。今日はどうでしたか？' }));
   const n = of(o, 'notify');
   assert.equal(n.length, 1);
-  assert.equal(n[0].level, 'urgent');
+  assert.equal(n[0].level, 'check');
+  assert.equal(n[0].origin, 'pain');
+  assert.equal(n[0].reason, '腰が痛いとおっしゃいました。どの程度か、動けるかは分かりません。');
   assert.match(n[0].evidence, /腰が痛い/);
+  const f = of(o, 'followup');
+  assert.equal(f.length, 1);
+  assert.equal(f[0].minutes, 180);
+  assert.equal(f[0].task, 'return');
+  assert.match(f[0].text, /腰が痛いとおっしゃっていましたが、今はどうですか/);
   assert.equal(o.expression, 'worry');
   assert.equal(o.classified.status, 'done'); // 帰宅の返事はあった
+  assert.equal(o.classified.confidence, 1);
+  assert.equal(o.classified.uncertain, false);
   assert.equal(of(o, 'recheck').length, 0);
+  assert.ok(!/家族/.test(o.say), o.say);       // 本人に「家族に知らせた」とは言わない
+});
+
+test('L4 の語（転んだ・動けない・息苦しい・助けて・胸が痛い）→ urgent、一言は定型文、聞き直し・再確認なし', async () => {
+  for (const reply of ['さっき転んだの', '動けない', '息苦しい', '助けて', 'まだ。胸が痛い']) {
+    const o = await rules.run(input('dress', reply));
+    const n = of(o, 'notify');
+    assert.deepEqual(n.map(x => x.level), ['urgent'], reply);
+    assert.equal(n[0].origin, 'l4_words');
+    assert.equal(o.say, L4_SAY);
+    assert.equal(o.expression, 'worry');
+    assert.equal(of(o, 'followup').length, 0, reply);
+    assert.equal(of(o, 'recheck').length, 0, reply);
+  }
+});
+
+test('火事・煙は L4（火災の可能性）。「熱いお茶」は拾わない', async () => {
+  const o = await rules.run(input('water', '台所から煙が出てる', { at: '10:30', dayservice: false }));
+  const n = of(o, 'notify');
+  assert.equal(n[0].level, 'urgent');
+  assert.equal(n[0].origin, 'fire');
+  assert.match(n[0].reason, /火災の可能性/);
+  assert.equal(detectL4('熱いお茶がいいわ'), null);
+  assert.deepEqual(detectL4('部屋が熱い、焦げ臭い'), { word: '焦げ臭', group: 'fire' });
+});
+
+test('だるい・眠い・疲れた → 記録のみ（通知しない）', async () => {
+  const o = await rules.run(input('return', '疲れた。眠い', { at: '16:00' }));
+  assert.equal(of(o, 'notify').length, 0);
+  assert.equal(o.classified.status, 'done');
+  assert.equal(detectMildDiscomfort('なんだかだるいの'), 'だるい');
 });
 
 test('（テレビの音）→ unclear、通知しない、再確認の対象', async () => {
@@ -134,9 +175,12 @@ test('postProcess: ADK の結果でも pickup done に info が無ければ足�
     { type: 'notify', level: 'info', reason: '出発しました', evidence: '行ってきます' },
   ]), input('pickup', '来たよ、行ってきます', { at: '09:02' }));
   assert.equal(of(p2, 'notify').length, 1);
-  // 痛みの訴えがあれば urgent だけ
+  // 痛みがあれば check（痛み）だけ。出発の info は足さない
   const p3 = postProcess(base([{ type: 'record', task: 'pickup', status: 'done', note: '来たよ' }]), input('pickup', '来たよ。足が痛い', { at: '09:02' }));
-  assert.deepEqual(of(p3, 'notify').map(n => n.level), ['urgent']);
+  assert.deepEqual(of(p3, 'notify').map(n => n.level), ['check']);
+  // 転んだなら urgent だけ
+  const p4 = postProcess(base([{ type: 'record', task: 'pickup', status: 'done', note: '来たよ' }]), input('pickup', '来たよ。玄関で転んだ', { at: '09:02' }));
+  assert.deepEqual(of(p4, 'notify').map(n => n.level), ['urgent']);
 });
 
 test('返事なし → no_answer、再確認', async () => {
@@ -228,17 +272,68 @@ test('postProcess: record が無ければ規則で補う', () => {
   assert.ok(p.say.length > 0);
 });
 
-test('detectUrgent: 否定形と「血圧」は拾わない', () => {
-  assert.equal(detectUrgent('腰が痛い'), '痛い');
-  assert.equal(detectUrgent('助けて'), '助けて');
-  assert.equal(detectUrgent('もう痛くないよ'), null);
-  assert.equal(detectUrgent('血圧の薬'), null);
-  assert.equal(detectUrgent('（テレビの音）事故で倒れた人が'), null);
-  assert.equal(detectUrgent(null), null);
+test('detectL4 / detectPain: 群 A/B/C、否定形・血圧・テレビは拾わない。「痛い」は L4 ではない', () => {
+  assert.deepEqual(detectL4('転んじゃった'), { word: '転んじゃ', group: 'A' });
+  assert.deepEqual(detectL4('頭を打ったの'), { word: '頭を打', group: 'A' });
+  assert.deepEqual(detectL4('手がしびれる'), { word: 'しびれる', group: 'B' });
+  assert.deepEqual(detectL4('助けて'), { word: '助けて', group: 'C' });
+  assert.equal(detectL4('腰が痛い'), null);
+  assert.equal(detectUrgent('腰が痛い'), null);
+  assert.equal(detectL4('転んでないよ'), null);
+  assert.equal(detectL4('倒れてはいない'), null);
+  assert.equal(detectL4('もう苦しくない'), null);
+  assert.equal(detectL4('血は出てない'), null);
+  assert.equal(detectL4('血圧の薬'), null);
+  assert.equal(detectL4('（テレビの音）事故で倒れた人が'), null);
+  assert.equal(detectL4(null), null);
+
+  assert.deepEqual(detectPain('疲れた。腰がちょっと痛い'), { word: '痛い', part: '腰' });
+  assert.deepEqual(detectPain('膝が痛くて'), { word: '痛く', part: '膝' });
+  assert.deepEqual(detectPain('お腹が痛むの'), { word: '痛む', part: 'お腹' });
+  assert.deepEqual(detectPain('こしがいたい'), { word: 'いたい', part: 'こし' });
+  assert.equal(detectPain('もう痛くないよ'), null);
+  assert.equal(detectPain('痛くはない'), null);
+  assert.equal(detectPain('娘に会いたいわ'), null);
+  assert.equal(detectPain('（テレビの音）腰が痛い方に'), null);
 });
 
-test('再確認の分数: デイ以外の日は既定、お迎え直前でも 5 分以上', () => {
-  assert.equal(recheckMinutesFor(input('dress', 'まだ', { dayservice: false, at: '08:40' })), 15);
+test('postProcess: 語が無いのに LLM が urgent を出したら check に下げる（L4 は語だけ）。痛みには聞き直しを足す', () => {
+  const llm: TurnOutcome = {
+    classified: { status: 'done', note: '帰宅', by: 'llm' }, say: 'ご家族に知らせますね。', expression: 'worry', toolCalls: [], latencyMs: 0,
+    intents: [
+      { type: 'record', task: 'return', status: 'done', note: '腰が痛い', confidence: 0.9 },
+      { type: 'notify', level: 'urgent', reason: '腰の痛み', evidence: '腰が痛い' },
+    ],
+  };
+  const p = postProcess(llm, input('return', 'ただいま。腰が痛い', { at: '16:00' }));
+  const n = of(p, 'notify');
+  assert.deepEqual(n.map(x => [x.level, x.origin]), [['check', 'pain']]);
+  assert.equal(of(p, 'followup').length, 1);
+  assert.ok(!/家族/.test(p.say), p.say);   // 「家族に知らせますね」は固定文に置き換える
+  assert.equal(p.classified.confidence, 0.9);
+  assert.equal(p.classified.uncertain, false);
+});
+
+test('確信度: LLM の 0.7 未満は uncertain。規則は 1.0、unclear は 0.5', async () => {
+  const llm: TurnOutcome = {
+    classified: { status: 'done', note: 'たぶん', by: 'llm' }, say: 'よかったです。', expression: 'smile', toolCalls: [], latencyMs: 0,
+    intents: [{ type: 'record', task: 'dress', status: 'done', note: 'たぶん', confidence: 0.4 }],
+  };
+  const p = postProcess(llm, input('dress', 'うーん、着たかな'));
+  assert.equal(p.classified.confidence, 0.4);
+  assert.equal(p.classified.uncertain, true);
+  const r = await rules.run(input('water', '（テレビの音）続いては天気です', { at: '16:30' }));
+  assert.equal(r.classified.confidence, 0.5);
+  assert.equal(r.classified.uncertain, true);
+  const d = await rules.run(input('dress', '着替えたよ'));
+  assert.equal(d.classified.confidence, 1);
+  assert.equal(d.classified.uncertain, false);
+});
+
+test('再確認の分数: 予定の無い日のまだは 30 分、返事なしは 15 分、お迎え直前でも 5 分以上（criteria 3-1 ★4・3-3 ★7）', () => {
+  assert.equal(recheckMinutesFor(input('dress', 'まだ', { dayservice: false, at: '08:40' }), 'not_yet'), 30);
+  assert.equal(recheckMinutesFor(input('dress', null, { dayservice: false, at: '08:40' }), 'no_answer'), 15);
+  assert.equal(recheckMinutesFor(input('dress', null, { at: '08:35' }), 'no_answer'), 15);
   assert.equal(recheckMinutesFor(input('belongings', 'まだ', { at: '08:50' })), 5);
 });
 
@@ -282,7 +377,7 @@ const fc = (name: string, args: Record<string, unknown>, id: string) => ({ funct
 test('ADK: 道具の呼び出しが intents と toolCalls に入り、call_outside と未承認の share_external は止まる', async () => {
   const llm = new FakeLlm([
     { content: { role: 'model', parts: [
-      fc('record_observation', { task: 'dinner', status: 'done', note: '食べたよ' }, 'c1'),
+      fc('record_observation', { task: 'dinner', status: 'done', note: '食べたよ', confidence: 0.95 }, 'c1'),
       fc('call_outside', { who: '妹', message: '電話して' }, 'c2'),
       fc('share_external', { recipient: 'doctor', summary: '様子' }, 'c3'),
       fc('notify_family', { level: 'check', reason: '妹に電話してと頼まれました', evidence: '妹に電話して' }, 'c4'),
@@ -293,6 +388,7 @@ test('ADK: 道具の呼び出しが intents と toolCalls に入り、call_outsi
   assert.equal(o.degraded, undefined);
   assert.equal(o.classified.by, 'llm');
   assert.equal(o.classified.status, 'done');
+  assert.equal(o.classified.confidence, 0.95);
   assert.equal(o.say, 'よかったです。ご家族に伝えておきますね。');
   assert.deepEqual(o.toolCalls.map(t => [t.name, t.blocked]), [
     ['record_observation', false], ['call_outside', true], ['share_external', true], ['notify_family', false],
@@ -315,5 +411,5 @@ test('ADK: LLM のタイムアウト → 規則で代替し degraded=llm_timeout
 test('ADK: LLM の例外 → 規則で代替し degraded=llm_error', async () => {
   const o = await new AdkTurnRunner({ model: new FakeLlm(['throw']), timeoutMs: 5000 }).run(input('return', '腰が痛い', { at: '16:00' }));
   assert.equal(o.degraded?.reason, 'llm_error');
-  assert.equal(of(o, 'notify')[0].level, 'urgent');
+  assert.equal(of(o, 'notify')[0].level, 'check');   // 痛みは L3（criteria 3-2）
 });

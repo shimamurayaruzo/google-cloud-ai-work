@@ -1,8 +1,8 @@
 // 声かけ計画: 曜日による雛形の選択、既定の文言、再確認までの分の決め方。
 // 文言の出所は docs/03_声かけ計画_初期値.md。
 
-import { dateKey, hhmm, jstDate, minutesBetween, toMinutes, weekdayKey } from '../time.js';
-import type { DateKey, Household, PlanItem, TaskKey } from '../types.js';
+import { dateKey, hhmm, inQuietHours, jstDate, minutesBetween, toMinutes, weekdayKey } from '../time.js';
+import type { Classification, DateKey, Household, PlanItem, TaskKey } from '../types.js';
 
 /** その日がデイの日か（household.plan.dayserviceDays の曜日） */
 export function isDayserviceDate(household: Household, date: DateKey): boolean {
@@ -89,14 +89,67 @@ export function recheckDelayMinutes(
   item: PlanItem | undefined,
   _task: TaskKey,
   now: Date,
+  /** その日がデイの日か（省略時は曜日から） */
+  isDayservice?: boolean,
 ): number {
   const base = item?.recheckMinutes && item.recheckMinutes > 0 ? item.recheckMinutes : household.policy.recheckMinutes;
   const pickup = household.plan.pickupTime;
   const date = dateKey(now);
-  if (!pickup || !isDayserviceDate(household, date)) return base;
+  if (!pickup || !(isDayservice ?? isDayserviceDate(household, date))) return base;
   const remaining = minutesBetween(now, jstDate(date, pickup));
   if (remaining <= 0) return base;            // お迎え後は逆算しない
   const half = Math.floor(remaining / 2);
   if (half >= base) return base;              // 残りに余裕がある
   return Math.max(5, half);
+}
+
+// ---------------------------------------------------------------------------
+// criteria v2 の再確認の間隔・上限・就寝時間帯
+// ---------------------------------------------------------------------------
+
+/** 返事が無いときの再確認の間隔（criteria 3-3 ★7: 初回から 15 分後、30 分後） */
+export const NO_ANSWER_RECHECK_MINUTES = 15;
+/** 予定が無い日の「まだ」の再確認の間隔（criteria 3-1 ★4） */
+export const NO_SCHEDULE_RECHECK_MINUTES = 30;
+/** 再確認の上限の既定（criteria 5 節 ★3: 初回＋再確認 2 回 = 計 3 回） */
+export const DEFAULT_MAX_RECHECKS = 2;
+/** 就寝時間帯の既定（criteria 3-3 ★8。docs/03 の 21:00 の声かけは含めない） */
+export const DEFAULT_SLEEP_HOURS = { from: '21:30', to: '07:30' } as const;
+
+/** 再確認の上限。policy.maxRechecks があればそれ、無ければ recheckOnce（1 回）／そうでなければ 2 回 */
+export function maxRechecksOf(household: Household): number {
+  const m = household.policy.maxRechecks;
+  if (typeof m === 'number' && Number.isFinite(m) && m >= 0) return Math.floor(m);
+  return household.policy.recheckOnce ? 1 : DEFAULT_MAX_RECHECKS;
+}
+
+/** 就寝時間帯（未設定なら既定 21:30〜07:30） */
+export function sleepHoursOf(household: Household): { from: string; to: string } {
+  return household.policy.sleepHours ?? DEFAULT_SLEEP_HOURS;
+}
+
+/** 就寝時間帯に入っているか（声かけをしない・無反応判定の対象外） */
+export function inSleepHours(household: Household, d: Date): boolean {
+  return inQuietHours(d, sleepHoursOf(household));
+}
+
+/**
+ * 再確認までの分（criteria v2 3-1・3-3）。
+ *  - 返事なし … 常に 15 分（次も 15 分。初回から 30 分で 3 回目）
+ *  - まだ・判定できない … デイの日はお迎えから逆算（recheckDelayMinutes）、予定が無い日は計画の recheckMinutes、無ければ 30 分
+ */
+export function recheckIntervalMinutes(
+  household: Household,
+  item: PlanItem | undefined,
+  task: TaskKey,
+  status: Classification,
+  isDayservice: boolean,
+  now: Date,
+): number {
+  if (status === 'no_answer') return NO_ANSWER_RECHECK_MINUTES;
+  if (!isDayservice) {
+    // 家族が計画で時刻を決めている項目（docs/03 の 8:05→8:20 など）はそれを優先し、無ければ 30 分（criteria ★4）
+    return item?.recheckMinutes && item.recheckMinutes > 0 ? item.recheckMinutes : NO_SCHEDULE_RECHECK_MINUTES;
+  }
+  return recheckDelayMinutes(household, item, task, now, isDayservice);
 }

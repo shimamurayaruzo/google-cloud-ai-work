@@ -1,7 +1,7 @@
 // LINE Webhook（POST /webhook/line）。docs/02 §3.3。
 //  - follow: 友だち追加した人の userId を、順番の若い「LINE 未登録」の家族に登録する
-//  - postback "ack:<noticeId>": 通知の「確認した」ボタン
-//  - message「確認した」「OK」: 直近の開いている通知を確認済みにする
+//  - postback "ack:<noticeId>": 通知の「確認した」ボタン。"false:<noticeId>": 「誤報だった」ボタン（確認済み＋誤報の記録）
+//  - message「確認した」「OK」: 開いている通知（送ったもの）のうち一番重いもの・新しいものを確認済みにする
 // 署名が正しければ、処理に失敗しても 200 を返す（LINE の再送で同じ処理が重ならないように）。
 // userId やメッセージ本文はログに出さない。
 
@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 import { config } from '../config.js';
 import type { AppContext } from '../services.js';
 import { logError, logEvent, logWarn } from '../log.js';
-import { parseAckPostback } from '../notify/index.js';
+import { parseNoticePostback } from '../notify/index.js';
 import type { Household, HouseholdId, Member } from '../types.js';
 import { verifyLineSignature } from './auth.js';
 import { json, ok, type Router } from './router.js';
@@ -48,9 +48,11 @@ async function onFollow(ctx: AppContext, hh: HouseholdId, h: Household, userId: 
   logEvent('line_follow', { hh, memberId: target.id });
 }
 
-async function onAck(ctx: AppContext, hh: HouseholdId, noticeId: string, memberId: string, now: Date): Promise<void> {
-  const n = await ctx.familyNotify.ack(hh, noticeId, memberId, now);
-  logEvent('line_ack', { hh, noticeId, memberId, found: Boolean(n) });
+async function onAck(ctx: AppContext, hh: HouseholdId, noticeId: string, memberId: string, now: Date, falseAlarm = false): Promise<void> {
+  const n = falseAlarm
+    ? await ctx.familyNotify.ack(hh, noticeId, memberId, now, { falseAlarm: true })
+    : await ctx.familyNotify.ack(hh, noticeId, memberId, now);
+  logEvent('line_ack', { hh, noticeId, memberId, found: Boolean(n), falseAlarm });
 }
 
 export async function handleLineEvents(ctx: AppContext, hh: HouseholdId, events: LineEvent[]): Promise<number> {
@@ -68,15 +70,18 @@ export async function handleLineEvents(ctx: AppContext, hh: HouseholdId, events:
         await onFollow(ctx, hh, h, userId, now);
         handled++;
       } else if (ev.type === 'postback') {
-        const noticeId = parseAckPostback(ev.postback?.data);
-        if (noticeId && /^[A-Za-z0-9_-]{1,80}$/.test(noticeId)) {
+        const pb = parseNoticePostback(ev.postback?.data);
+        if (pb && /^[A-Za-z0-9_-]{1,80}$/.test(pb.noticeId)) {
           const member = memberByLineUser(h, userId);
-          await onAck(ctx, hh, noticeId, member?.id ?? 'line:unknown', now);
+          await onAck(ctx, hh, pb.noticeId, member?.id ?? 'line:unknown', now, pb.falseAlarm);
           handled++;
         }
       } else if (ev.type === 'message' && ev.message?.type === 'text' && isAckText(ev.message.text ?? '')) {
-        const open = await ctx.store.listOpenNotices(hh);
-        const latest = open.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        // 送ったもの（deferred 以外）のうち、至急 → 確認のお願い → お知らせ の順、同じ段階なら新しいもの
+        const rank = { urgent: 0, check: 1, info: 2 } as const;
+        const open = (await ctx.store.listOpenNotices(hh)).filter(n => n.state !== 'deferred');
+        const latest = open.sort((a, b) =>
+          rank[a.level] - rank[b.level] || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
         if (latest) {
           const member = memberByLineUser(h, userId);
           await onAck(ctx, hh, latest.id, member?.id ?? 'line:unknown', now);

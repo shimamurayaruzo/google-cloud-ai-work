@@ -64,7 +64,7 @@ export class MemoryStore implements Store {
     if (!d) throw new Error(`day not found: ${hh}/${date}`);
     d.tasks[task] = clone(record);
   }
-  async updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice'>>): Promise<void> {
+  async updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice' | 'l4'>>): Promise<void> {
     const d = this.days.get(key(hh, date));
     if (!d) throw new Error(`day not found: ${hh}/${date}`);
     this.days.set(key(hh, date), { ...d, ...clone(patch) });

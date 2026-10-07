@@ -1,0 +1,42 @@
+{
+  "name": "着替えが 3 回取れない（criteria v2 3-1: 2 回目で L2、3 回目で L3）",
+  "date": "2026-10-02",
+  "isDayservice": true,
+  "turns": [
+    {
+      "at": "08:35",
+      "task": "dress",
+      "reply": "まだ",
+      "expect": {
+        "status": "not_yet"
+      }
+    },
+    {
+      "at": "08:45",
+      "task": "dress",
+      "reply": "まだよ、あとで",
+      "expect": {
+        "status": "not_yet",
+        "notify": "info"
+      }
+    },
+    {
+      "at": "08:52",
+      "task": "dress",
+      "reply": "これからする",
+      "expect": {
+        "status": "not_yet",
+        "notify": "check"
+      }
+    },
+    {
+      "at": "09:00",
+      "task": "pickup",
+      "reply": "来たよ、行ってきます",
+      "expect": {
+        "status": "done",
+        "notify": "info"
+      }
+    }
+  ]
+}

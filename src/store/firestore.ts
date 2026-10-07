@@ -43,9 +43,27 @@ function data<T>(snap: { exists: boolean; data(): DocumentData | undefined }): T
   return revive(snap.data()) as T;
 }
 
-/** 書き込み用。Date はそのまま（Firestore が Timestamp に変える）、undefined は ignoreUndefinedProperties で落ちる */
+/**
+ * 書き込み用。Date はそのまま（Firestore が Timestamp に変える）。
+ * undefined の項目は入れ子まで落とす（ignoreUndefinedProperties を付けずに Firestore を渡されたときも undefined を書かない。
+ * 新しい任意項目 — Day.l4、Notice.falseAlarm/deferredReason/origin、Turn.classified.confidence など — のため）
+ */
 function plain(v: object): DocumentData {
-  return v as DocumentData;
+  return stripUndefined(v) as DocumentData;
+}
+
+export function stripUndefined(v: unknown): unknown {
+  if (Array.isArray(v)) return v.filter(x => x !== undefined).map(stripUndefined);
+  if (v && typeof v === 'object') {
+    const proto = Object.getPrototypeOf(v);
+    if (proto !== Object.prototype && proto !== null) return v;   // Date・Timestamp などはそのまま
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (x !== undefined) out[k] = stripUndefined(x);
+    }
+    return out;
+  }
+  return v;
 }
 
 function byTime<T>(get: (x: T) => Date | undefined) {
@@ -109,7 +127,7 @@ export class FirestoreStore implements Store {
     // 日が無ければ update が NOT_FOUND で throw する（先に putDay）
     await this.dayRef(hh, date).update({ [`tasks.${task}`]: plain(record), updatedAt: new Date() });
   }
-  async updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice'>>): Promise<void> {
+  async updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice' | 'l4'>>): Promise<void> {
     await this.dayRef(hh, date).update(plain({ ...patch, updatedAt: new Date() }));
   }
   async listRecentDays(hh: HouseholdId, beforeDate: DateKey, count: number): Promise<Day[]> {
