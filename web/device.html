@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#fbf7ef">
+<title>見守り（母側）</title>
+<link rel="stylesheet" href="/device.css">
+<script defer src="/device.js"></script>
+</head>
+<body class="mode-bedroom">
+<!--
+  母側の iPad の画面（iPad Pro 12.9 横置き・Safari）。本人は操作しない。
+  見た目と場面は docs/mockups/01-device-bedroom.html・02-device-bath.html、API は src/api/README.md 1 節と docs/02 §11。
+  開発者向けの確認ページは /dev/device.html。
+-->
+<div class="screen" id="screen">
+  <div class="paused-band" id="pausedBand" hidden></div>
+  <div class="scr">
+    <header class="top">
+      <div class="top-left">
+        <div class="clock-small" id="clockSmall"><div class="d" id="clockSmallDate"></div><div class="t" id="clockSmallTime"></div></div>
+        <div class="steps" id="bathSteps" aria-label="お風呂の進み具合">
+          <span class="step" id="stepWash"><i></i>体を洗う</span><span class="arrow">›</span><span class="step" id="stepTeeth"><i></i>歯磨き</span>
+        </div>
+      </div>
+      <nav class="fam" id="fam" aria-label="ご家族用の操作">
+        <span class="lbl">ご家族用</span>
+        <div class="seg" role="group" aria-label="モード">
+          <button type="button" id="modeBedroom" class="on">寝室</button><button type="button" id="modeBath">お風呂</button>
+        </div>
+        <button type="button" class="solo" id="planBtn">今日の予定</button>
+        <button type="button" class="solo" id="pauseBtn">いったん止める</button>
+      </nav>
+    </header>
+
+    <div class="facebox"><svg class="face" id="face" viewBox="-12 0 224 200" role="img" aria-label="顔"></svg></div>
+
+    <main class="talk" id="talk" aria-live="polite">
+      <div class="clock-view" id="clockView">
+        <div class="big-day" id="bigDay"></div>
+        <div class="big-clock" id="bigClock"></div>
+        <div class="soft" id="clockSoft"></div>
+      </div>
+      <div class="reply" id="replyBubble" hidden><small>お返事</small><span id="replyText"></span></div>
+      <div class="say" id="sayText" hidden></div>
+      <div class="sub" id="subText" hidden></div>
+      <div class="listen" id="listenMark" hidden>
+        <span class="mic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0" stroke-width="2" fill="none"/><rect x="11" y="17" width="2" height="4"/></svg></span><span id="listenLabel">お返事を聞いています</span>
+      </div>
+    </main>
+
+    <footer class="bottom">
+      <div class="bottom-left">
+        <div class="next-line" id="nextLine"></div>
+        <div class="notice" id="bathNotice">この iPad は安全の確認をしません。転んだことなどは分かりません。</div>
+      </div>
+      <div class="state" id="state">
+        <span id="stConn">● つないでいます</span>
+        <span id="stMic">マイク: 聞いていません</span>
+        <span id="stMode">寝室モード</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 今日の予定（ご家族用）。本人には読み上げない -->
+  <aside class="drawer" id="drawer" hidden aria-label="今日の予定（ご家族用）">
+    <button type="button" class="close" id="drawerClose">閉じる</button>
+    <h2>今日の予定</h2>
+    <div class="dsub">ご家族用。お母さんには読み上げません。</div>
+    <dl class="dl">
+      <dt>次の声かけ</dt><dd id="drNext">—</dd>
+      <dt>居場所を聞かれたら</dt><dd id="drWhere">—</dd>
+      <dt>モード</dt><dd id="drMode">—</dd>
+      <dt>最後のやりとり</dt><dd id="drLast">—</dd>
+    </dl>
+    <p class="dnote">一日の予定とお返事の記録は、ご家族の画面（スマホで /family）で見られます。この iPad からは、次の声かけの時刻だけが分かります。</p>
+    <div class="dactions">
+      <button type="button" id="drText">文字で入れる欄を出す</button>
+      <button type="button" id="drSettings">端末の設定をやり直す</button>
+    </div>
+  </aside>
+
+  <!-- 文字で入れる欄（マイクが使えないとき・開発者向け。普段は隠す） -->
+  <form class="textbar" id="textbar" hidden autocomplete="off">
+    <input type="text" id="textInput" enterkeyhint="send" placeholder="お返事を文字で入れる">
+    <button type="submit" id="textSend">送る</button>
+    <button type="button" id="textNoAnswer" class="ghost">返事なし</button>
+    <button type="button" id="textClose" class="ghost" aria-label="文字の欄を閉じる">×</button>
+  </form>
+
+  <!-- 設定と「はじめる」（家族がタップ） -->
+  <div class="overlay" id="startOverlay">
+    <div class="start-card">
+      <h1>見守り（母側）</h1>
+      <form id="setupForm" class="setup" hidden autocomplete="off">
+        <p class="hint">この iPad の登録です。ご家族の方が入れてください（一度入れると、この iPad に保存されます）。</p>
+        <label for="setupHh">世帯 ID</label>
+        <input type="text" id="setupHh" placeholder="hh_main" autocapitalize="off" spellcheck="false">
+        <label for="setupToken">端末トークン</label>
+        <input type="password" id="setupToken" autocapitalize="off" spellcheck="false">
+        <p class="err" id="setupErr" hidden></p>
+        <button type="submit" class="primary">保存する</button>
+      </form>
+      <div id="startBox" hidden>
+        <button type="button" class="start-btn" id="startBtn">はじめる</button>
+        <p class="hint">ご家族の方が押してください。声とマイクを使えるようにします。<br>マイクの許可を聞かれたら「許可」を選んでください。</p>
+        <p class="small"><button type="button" class="linkish" id="editSetup">端末の設定を変える</button></p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

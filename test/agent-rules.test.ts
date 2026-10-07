@@ -413,3 +413,39 @@ test('ADK: LLM の例外 → 規則で代替し degraded=llm_error', async () =>
   assert.equal(o.degraded?.reason, 'llm_error');
   assert.equal(of(o, 'notify')[0].level, 'check');   // 痛みは L3（criteria 3-2）
 });
+
+// ---- 2026-10-07 の要望: 外部連絡の依頼（「伝えて」）と、通知の理由の言い回し ----
+test('「ケアマネさんに伝えて」は外部連絡の依頼: LLM が「かしこまりました」でも check と「ご家族に伝えておきますね」に落とす', async () => {
+  const { postProcess: pp, contactReason, CONTACT_SAY } = await import('../src/agent/rules.js');
+  const inp = input('water', 'ケアマネさんに伝えて', { at: '10:30' });
+  const raw: TurnOutcome = {
+    classified: { status: 'done', note: '', by: 'llm', confidence: 0.9 }, say: 'かしこまりました。', expression: 'smile',
+    toolCalls: [], latencyMs: 0, intents: [{ type: 'record', task: 'water', status: 'done', note: '', confidence: 0.9 }],
+  };
+  const o = pp(raw, inp);
+  assert.ok(o.say.startsWith(CONTACT_SAY), o.say);
+  assert.ok(!/かしこまり/.test(o.say));
+  const n = of(o, 'notify');
+  assert.deepEqual(n.map(x => [x.level, x.origin, x.reason]), [['check', 'contact', 'ケアマネさんに伝えてほしいと頼まれました（こちらからは連絡していません）']]);
+  assert.equal(contactReason('ねえ、妹に電話してちょうだい'), '妹に電話してほしいと頼まれました（こちらからは連絡していません）');
+  // 規則だけでも同じ
+  const r = await rules.run(inp);
+  assert.ok(of(r, 'notify').some(x => x.origin === 'contact'));
+  assert.ok(r.say.startsWith(CONTACT_SAY));
+  // 「伝えてくれてありがとう」は依頼ではない
+  assert.equal(of(await rules.run(input('water', '伝えてくれてありがとう', { at: '10:30' })), 'notify').length, 0);
+});
+
+test('通知の理由は会話調: LLM の「転倒の訴えがありました」は規則の文に揃え、「訴え」「発話」を残さない', async () => {
+  const { postProcess: pp, familyWording } = await import('../src/agent/rules.js');
+  const inp = input('water', '転んじゃった', { at: '10:30' });
+  const raw: TurnOutcome = {
+    classified: { status: 'done', note: '', by: 'llm', confidence: 0.9 }, say: '', expression: 'worry', toolCalls: [], latencyMs: 0,
+    intents: [{ type: 'notify', level: 'urgent', reason: '転倒の訴えがありました', evidence: '転んじゃった' }],
+  };
+  const o = pp(raw, inp);
+  assert.ok(of(o, 'notify').every(x => !/訴え|発話/.test(x.reason)));
+  assert.equal(familyWording('転倒の訴えがありました'), '転んだとおっしゃいました');
+  assert.equal(familyWording('痛みの訴えがありました'), '痛いとおっしゃいました');
+  assert.ok(!/訴え|発話|発言/.test(familyWording('本人の発話で、頭痛を訴えた')));
+});

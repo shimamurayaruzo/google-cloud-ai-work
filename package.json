@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test --env-file-if-exists=.env.test \"test/**/*.test.ts\"",
     "seed:dev": "tsx --env-file-if-exists=.env scripts/seed-dev.ts",
+    "seed:demo": "tsx --env-file-if-exists=.env scripts/seed-demo-history.ts",
     "replay": "tsx --env-file-if-exists=.env scripts/replay.ts"
   },
   "dependencies": {

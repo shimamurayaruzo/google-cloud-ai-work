@@ -1,0 +1,15 @@
+{
+  "name": "お風呂モード（docs/02 §11.3: 洗う「はい」→歯磨き→自動で寝室へ／洗う声かけに 2 回返事なし → 確認のお願い。L4 にはしない）",
+  "date": "2026-10-03",
+  "isDayservice": false,
+  "turns": [
+    { "at": "19:30", "mode": "bath", "expect": { "mode": "bath" } },
+    { "at": "19:40", "task": "bath", "reply": "はい、洗います", "expect": { "status": "done", "notify": "info", "mode": "bath" } },
+    { "at": "19:55", "task": "teeth", "reply": "みがいたよ", "expect": { "status": "done", "mode": "bath" } },
+    { "at": "20:10", "task": "water", "reply": "のんだよ", "expect": { "status": "done", "mode": "bedroom" } },
+    { "at": "20:30", "mode": "bath", "expect": { "mode": "bath" } },
+    { "at": "20:40", "task": "bath", "reply": null, "expect": { "status": "no_answer", "mode": "bath" } },
+    { "at": "20:42", "task": "bath", "reply": null, "expect": { "status": "no_answer", "notify": "check", "mode": "bath" } },
+    { "at": "20:50", "mode": "bedroom", "expect": { "mode": "bedroom" } }
+  ]
+}

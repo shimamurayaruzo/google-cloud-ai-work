@@ -8,6 +8,7 @@ import { enqueuePrompt, expireUnansweredPrompts, planDay } from '../state/day.js
 import { handleRecheck } from '../state/turn.js';
 import { buildAndSendSummary } from '../state/summary.js';
 import { runHealthCheck } from '../ops/health.js';
+import { handleBathReturn, modeOf } from '../state/mode.js';
 import { logEvent } from '../log.js';
 import type { Prompt } from '../types.js';
 import { requireInternal } from './auth.js';
@@ -76,6 +77,15 @@ export function registerInternalRoutes(router: Router, ctx: AppContext): void {
     const { hh, date } = target(req, now);
     const summary = await buildAndSendSummary(ctx, hh, date, now);
     ok(res, { ok: true, hh, date, summary });
+  });
+
+  // Tasks: お風呂モードから寝室へ自動で戻す（docs/02 §11.3）。予約したときと違うお風呂なら何もしない
+  router.post('/internal/bath-return', async (req: Request, res: Response) => {
+    await requireInternal(req);
+    const now = ctx.clock();
+    const { body, hh } = target(req, now);
+    const r = await handleBathReturn(ctx, hh, now, str(body.startedAt));
+    ok(res, { ok: true, hh, switched: r.switched, ...(r.reason ? { reason: r.reason } : {}), mode: modeOf(r.household) });
   });
 
   // Scheduler 5 分ごと: 答えのない声かけを締め、生存信号・エラー・TTS を点検

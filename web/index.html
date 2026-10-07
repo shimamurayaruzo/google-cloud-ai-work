@@ -1,38 +1,112 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>見張らない見守り</title>
-  <style>
-    :root { --bg: #f4f6f3; --fg: #1f2a24; --muted: #4a5650; --line: #d9dfda; --accent: #1f6f5b; --card: #fff; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #151a17; --fg: #e6ece8; --muted: #a9b5ae; --line: #2e3833; --accent: #6cc3a8; --card: #1d2420; }
-    }
-    body { font-family: sans-serif; background: var(--bg); color: var(--fg); margin: 0; }
-    main { max-width: 720px; margin: 0 auto; padding: 32px 16px; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
-    p { color: var(--muted); line-height: 1.7; }
-    .note { border: 1px dashed var(--line); padding: 12px 14px; border-radius: 8px; font-size: 14px; }
-    ul { list-style: none; padding: 0; display: grid; gap: 10px; }
-    li a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; color: var(--fg); text-decoration: none; }
-    li a:hover { border-color: var(--accent); }
-    li a b { color: var(--accent); }
-    small { color: var(--muted); display: block; margin-top: 4px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>見張らない見守り</title>
+<meta name="description" content="日中ひとりで過ごす認知症の母に iPad から声をかけ、予定とお返事で次の声かけを変え、夕方に家族へ様子を届けるエージェント">
+<link rel="stylesheet" href="/judge.css">
 </head>
 <body>
-<main>
-  <h1>見張らない見守り</h1>
-  <p>予定と返答で次の声かけを変える、在宅介護の見守りエージェントです。</p>
-  <p class="note">このページは開発用の入口です。馬場さんの本画面（顔画面・家族画面）ができたら、ここと <code>/device</code>・<code>/family</code> はそれに置き換わります。</p>
-  <ul>
-    <li><a href="/device"><b>/device</b> 顔画面（iPad）<small>本画面が無い間は開発者向け確認ページを出します</small></a></li>
-    <li><a href="/family"><b>/family</b> 家族の画面<small>合言葉でログインします。本画面が無い間は開発者向け確認ページを出します</small></a></li>
-    <li><a href="/dev/device.html"><b>/dev/device.html</b> 開発者向け: 端末の確認ページ<small>生存信号、声かけの読み上げ、返事の送信</small></a></li>
-    <li><a href="/dev/family.html"><b>/dev/family.html</b> 開発者向け: 家族 API の確認ページ<small>今日の様子、計画、承認、台帳、設定、停止、再生モード</small></a></li>
-    <li><a href="/healthz"><b>/healthz</b> 死活確認<small>{ "ok": true } を返します</small></a></li>
-  </ul>
-</main>
+<div class="site">
+  <header class="brand">
+    <div>
+      <h1>見張らない見守り</h1>
+      <p>日中ひとりで過ごす認知症の母に iPad から声をかけ、予定とお返事で次の声かけを変え、夕方に家族へ様子を届けるエージェント</p>
+    </div>
+    <div class="who" id="who">審査員の方へ</div>
+  </header>
+
+  <div class="cols">
+    <main>
+      <!-- 1. 合言葉 -->
+      <section id="v-login" class="card login hidden" aria-labelledby="loginTtl">
+        <h2 id="loginTtl">合言葉を入れてください</h2>
+        <p class="meta">提出フォームに書いた合言葉です。テスト用の世帯（架空のサンプルデータ）が開きます。12 時間ログインしたままになります。</p>
+        <form class="row" id="loginForm" autocomplete="off">
+          <input type="password" id="pass" placeholder="合言葉" aria-label="合言葉" required>
+          <button class="btn" type="submit">入る</button>
+        </form>
+        <p class="err hidden" id="loginErr"></p>
+      </section>
+
+      <!-- 2. 3 つのボタン -->
+      <section id="v-menu" class="hidden" aria-label="見られるもの">
+        <div class="three">
+          <button type="button" class="big main" id="playBtn">
+            <span class="n">①</span>
+            <span class="t">1 日分を再生する<br>（約 30 秒）</span>
+            <span class="d">デイサービスの日の台本を流し、声かけ・お返事・判定・通知・夕方の要約まで見せます。</span>
+          </button>
+          <div class="big">
+            <span class="n">②</span>
+            <a class="t" id="deviceLink" href="/device?hh=hh_demo" target="_blank" rel="noopener">母側の画面を見る ↗</a>
+            <span class="d">iPad の顔と字幕。寝室モードとお風呂モード。</span>
+            <label class="tok hidden" id="tokBox"><span>端末トークン</span>
+              <input type="password" id="token" autocomplete="off" placeholder="動作確認の方法欄に記載"></label>
+            <span class="d small">端末トークンは動作確認の方法欄に記載しています。</span>
+          </div>
+          <a class="big" href="/family?hh=hh_demo" target="_blank" rel="noopener">
+            <span class="n">③</span>
+            <span class="t">家族の画面を見る ↗</span>
+            <span class="d">今日の様子・承認・台帳・設定・今すぐ止める。</span>
+          </a>
+        </div>
+        <p class="meta">再生は本番と別の場所で動き、LINE・メール・Slack には何も送りません。</p>
+      </section>
+
+      <!-- 3. 再生 -->
+      <section id="v-replay" class="hidden" aria-label="再生">
+        <div class="card">
+          <div class="rp-head">
+            <h2 id="rpTitle">再生</h2>
+            <span class="score run" id="score">準備中</span>
+          </div>
+          <div class="prog" aria-hidden="true"><div id="bar"></div></div>
+          <div class="opts">
+            <button type="button" class="btn sec sm" id="skip">すぐ全部見る</button>
+            <label>台本 <select id="scenario"></select></label>
+            <label><input type="checkbox" id="useAdk"> Gemini で判定する（少し時間がかかります）</label>
+            <button type="button" class="btn sec sm" id="again">この条件で再生</button>
+          </div>
+          <p class="meta" id="rpNote"></p>
+          <div class="tl-wrap">
+            <table class="tl">
+              <thead><tr><th>時刻</th><th>AI の声かけ</th><th>お母さんのお返事</th><th>判定</th><th>次の行動・通知</th><th>期待値</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card summary hidden" id="summary"></div>
+      </section>
+    </main>
+
+    <aside class="side">
+      <div class="card priv">
+        <h3>見張らないための約束</h3>
+        <ul>
+          <li>カメラは使いません。</li>
+          <li>音声は保存しません（文字起こしは 7 日で削除）。</li>
+        </ul>
+        <p class="meta">テレビや来訪者の声など、ご本人の言葉か分からないものは判定しません。</p>
+      </div>
+      <div class="card">
+        <h3>判定の仕組み</h3>
+        <ul>
+          <li>回数・時刻・言葉はコードで決めます。</li>
+          <li>文脈が要るものだけ Gemini に任せます。</li>
+          <li>迷うものは決めつけず、人へ戻します。</li>
+        </ul>
+      </div>
+      <div class="card" id="caps">
+        <h3>できること・できないこと</h3>
+        <p class="meta">合言葉を入れると表示します。</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="dev">開発者向け: <a href="/dev/device.html">/dev/device.html</a> ・ <a href="/dev/family.html">/dev/family.html</a> ・ <a href="/healthz">/healthz</a></footer>
+</div>
+<script src="/judge.js"></script>
 </body>
 </html>

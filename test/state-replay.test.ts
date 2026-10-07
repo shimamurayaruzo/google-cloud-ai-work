@@ -92,3 +92,21 @@ test('dayservice-day.json（規則）: 全件一致、16:00 は check と聞き�
   assert.equal(follow!.state, 'queued');
   assert.ok(r.summary!.sections!.concerns.some(l => /腰がちょっと痛い/.test(l) && /聞き直す予定/.test(l)));
 });
+
+test('bath.json（規則）: お風呂モードの台本が全件一致。洗う無反応 ×2 は check で、L4 にはならない', async () => {
+  const scenario = await load('bath');
+  const { ctx, store, familyNotify, tasks } = createFakeContext({ turnRunner: new RulesTurnRunner() });
+  const r = await runScenario(ctx, 'hh_demo', scenario, { withSummary: true });
+  assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
+  assert.equal(r.passCount, scenario.turns.filter(t => t.expect).length);
+  // 自動の戻り（20:05、by system）がステップとして入る
+  const auto = r.steps.find(s => s.kind === 'mode' && s.modeBy === 'system');
+  assert.ok(auto);
+  assert.equal(auto!.at, '20:05');
+  assert.equal(auto!.mode, 'bedroom');
+  assert.deepEqual(familyNotify.calls.map(c => [c.level, c.origin]), [['info', 'bath'], ['check', 'bath']]);
+  assert.ok(!familyNotify.calls.some(c => c.level === 'urgent'));
+  assert.equal((await store.getDay('hh_demo', scenario.date))!.l4 ?? null, null);
+  assert.equal(tasks.scheduled.filter(s => s.path === '/internal/bath-return').length, 2);
+  assert.equal((await store.getHousehold('hh_demo'))!.mode, 'bedroom');
+});

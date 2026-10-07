@@ -17,20 +17,22 @@ import {
 import { ensureDay, enqueuePrompt } from './day.js';
 import { NotFoundError } from './errors.js';
 import {
-  L4_SAY, REASSURANCE_SAY, RulesTurnRunner, analyzeReply, excerpt as ruleExcerpt, isLikelyNotPerson, l4Reason,
+  L4_SAY, REASSURANCE_SAY, RulesTurnRunner, analyzeReply, excerpt as ruleExcerpt, familyWording, isLikelyNotPerson, l4Reason,
 } from '../agent/rules.js';
 import { currentDegraded, recordIncident } from '../ops/health.js';
 import { appendLedger, excerpt } from './ledger.js';
 import { currentL4, startL4 } from './l4.js';
 import { canRecheck, transition, type StageNotice } from './machine.js';
 import { defaultPromptText, findPlanItem, inSleepHours, recheckIntervalMinutes } from './plan.js';
+import { processBathReply } from './mode.js';
+import { handleUtterance } from './utterance.js';
 
 export { NotFoundError };
 
 /** replyText の保存期間（Firestore の TTL で消す） */
-const TURN_TTL_MINUTES = 7 * 24 * 60;
+export const TURN_TTL_MINUTES = 7 * 24 * 60;
 /** 「同じ質問の繰り返し」を数える窓 */
-const REPEAT_WINDOW_MINUTES = 30;
+export const REPEAT_WINDOW_MINUTES = 30;
 /** 要約に引用する本人の言葉の長さ */
 const EVIDENCE_MAX = 30;
 /** L4 中の返事を通知の根拠に追記するときの全体の上限 */
@@ -80,6 +82,14 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
     day.l4 = null;
     // 解除の後に届いた安心文への返事も判定しない（確認項目の返事ではないため）
     if (prompt.isReassurance) return processL4Reply(ctx, { prompt, replyText, source, now, noticeId });
+  }
+  // ---- 返事を求めない声かけ（ときたまの声かけ・お風呂の最初と最後の一言）への返事: 本人からの発話として扱う ----
+  if (prompt.expectsReply === false && !household.killSwitch) {
+    return processUnpromptedReply(ctx, { prompt, replyText, source, now });
+  }
+  // ---- お風呂の声かけへの返事: お風呂の流れ（state/mode.ts）。段階表は使わない ----
+  if (prompt.bathStep && !household.killSwitch) {
+    return processBathReply(ctx, { household, day, prompt, replyText, source, now });
   }
   // ---- 痛みの聞き直しへの返事: 規則で扱い、状態機械は動かさない ----
   if (prompt.followup && !household.killSwitch) {
@@ -372,7 +382,7 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
   };
 }
 
-async function scheduleFollowup(
+export async function scheduleFollowup(
   ctx: AppContext,
   household: Household,
   a: { hh: HouseholdId; date: DateKey; now: Date; turnId: string; intent: Extract<Intent, { type: 'followup' }>; noticeId?: string },
@@ -397,9 +407,10 @@ async function scheduleFollowup(
   logEvent('followup_scheduled', { hh, date, task: intent.task, at: hhmm(runAt) });
 }
 
-async function safeNotify(ctx: AppContext, req: NotifyRequest): Promise<Notice | null> {
+export async function safeNotify(ctx: Pick<AppContext, 'familyNotify'>, req: NotifyRequest): Promise<Notice | null> {
   try {
-    return await ctx.familyNotify.notify(req);
+    // 理由は会話調に揃える（「訴え」「発話」は使わない。report-design 0 節）
+    return await ctx.familyNotify.notify({ ...req, reason: familyWording(req.reason) });
   } catch (error) {
     // notify_error の incident は notify/ 側が書く。ここではログだけ残して会話を続ける
     logError('family_notify_failed', error, { hh: req.hh, level: req.level });
@@ -485,6 +496,45 @@ async function processL4Reply(
 }
 
 // ---------------------------------------------------------------------------
+// 返事を求めない声かけへの返事（docs/02 §11.2）
+// ---------------------------------------------------------------------------
+
+/**
+ * ときたまの声かけ・お風呂の最初と最後の一言は質問ではないので、返事は「本人からの発話」（state/utterance.ts）と同じに扱う
+ * （L4 の語・痛み・居場所・薬の質問には答える）。返事が無いときは声かけを締めるだけで、無反応として数えない。
+ */
+async function processUnpromptedReply(
+  ctx: AppContext,
+  a: { prompt: Prompt; replyText: string | null; source: ReplySource; now: Date },
+): Promise<ProcessReplyResult> {
+  const { prompt, replyText, source, now } = a;
+  const { hh, date } = prompt;
+  if (replyText != null && replyText.trim()) {
+    await ctx.store.updatePrompt(hh, date, prompt.id, { state: 'answered' });
+    const r = await handleUtterance(ctx, { hh, text: replyText, source, now, prompt });
+    return { turn: r.turn, followUp: null, say: r.say, expression: r.expression, intents: [], notices: r.notices };
+  }
+  await ctx.store.updatePrompt(hh, date, prompt.id, { state: 'expired' });
+  const turn: Turn = {
+    id: newId('tn'), hh, date, promptId: prompt.id, task: prompt.task,
+    promptedAt: prompt.deliveredAt ?? prompt.scheduledAt,
+    promptText: prompt.text,
+    replyText: null,
+    replySource: source,
+    repliedAt: now,
+    classified: { status: 'no_answer', note: '返事を求めない声かけ（無反応として数えない）', by: 'rules', confidence: 1 },
+    kind: 'utterance',
+    toolCalls: [],
+    say: '',
+    expression: 'smile',
+    latencyMs: 0,
+    expiresAt: addMinutes(now, TURN_TTL_MINUTES),
+  };
+  await ctx.store.putTurn(turn);
+  return { turn, followUp: null, say: '', expression: 'smile', intents: [], notices: [] };
+}
+
+// ---------------------------------------------------------------------------
 // 痛みの聞き直しへの返事（criteria 3-2: まだ痛い → L3 を再送、動けない → L4、返事なし → L3 を再送）
 // ---------------------------------------------------------------------------
 
@@ -495,7 +545,7 @@ async function processFollowupReply(
   const { household, day, prompt, replyText, source, now } = a;
   const { hh, date, task } = prompt;
   const analysis = analyzeReply(task, replyText, household);
-  const noise = analysis.status === 'unclear' && /本人の発話か分からない/.test(analysis.note);
+  const noise = analysis.status === 'unclear' && /本人の声か分からない/.test(analysis.note);
   let status: Classification;
   let note: string;
   let say: string;

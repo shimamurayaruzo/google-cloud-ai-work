@@ -6,6 +6,10 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { AppContext } from '../services.js';
 import { approvePlan, ensureDay } from '../state/day.js';
+import { modeOf, modeView, switchMode } from '../state/mode.js';
+import { whereaboutsSay } from '../state/whereabouts.js';
+import { clearL4ForNotice } from '../state/l4.js';
+import { config } from '../config.js';
 import { logEvent } from '../log.js';
 import { dateKey } from '../time.js';
 import {
@@ -19,9 +23,24 @@ import { HttpError, ok, type Router } from './router.js';
 import { bodyOf, qstr, toDateKey, toHousehold, truncate, writeLedger } from './util.js';
 
 const ACTOR = 'member:family' as const;
+/** 審査員向けのデモ世帯（src/seed/household.ts の demoHousehold） */
+const DEMO_HH = 'hh_demo';
 /** 合言葉ログインなので、誰が承認したかは「家族」までしか分からない */
 const APPROVER = 'family';
 const REPLY_PREVIEW_CHARS = 40;
+
+/** 居場所の登録（PUT /api/family/whereabouts。docs/02 §11.4） */
+export const WhereaboutsSchema = z.object({
+  /** null は「消す」（whereabouts = null） */
+  place: z.union([z.string().trim().min(1, '行き先を書いてください').max(30, '行き先は 30 文字までです'), z.null()]),
+  backAt: z.union([backAtTime(), z.null()]).optional(),
+  note: z.string().max(100).optional(),
+}).refine(w => w.place === null || w.backAt !== undefined, { message: 'backAt は HH:MM か null です', path: ['backAt'] });
+function backAtTime() {
+  return z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'backAt は HH:MM（例 18:00）か null です');
+}
+
+const ModeSchema = z.object({ mode: z.enum(['bedroom', 'bath']) });
 
 function hhOf(req: Request): HouseholdId {
   return toHousehold(qstr(req, 'hh'));
@@ -93,6 +112,16 @@ export const SettingsSchema = z.object({
     quietHours: z.object({ from: HHMM, to: HHMM }).optional(),
     /** 就寝時間帯（criteria 3-3 ★8。声かけをしない） */
     sleepHours: z.object({ from: HHMM, to: HHMM }).optional(),
+    /** 寝室モードの「ときたまの声かけ」の間隔（分。0 で無効。docs/02 §11.2） */
+    idleChatMinutes: z.number().int().min(0).max(600).optional(),
+    /** お風呂モードの間隔（分。docs/02 §11.3） */
+    bath: z.object({
+      washAfterMinutes: z.number().int().min(1).max(120),
+      teethAfterMinutes: z.number().int().min(1).max(120),
+      returnAfterMinutes: z.number().int().min(1).max(120),
+      recheckMinutes: z.number().int().min(1).max(30),
+      notifyAfterMinutes: z.number().int().min(1).max(60),
+    }).optional(),
   }).optional(),
   /** 通知文に書く連絡先。空文字で消す */
   contacts: z.object({
@@ -196,8 +225,75 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
         killSwitch: household.killSwitch,
         members: [...household.members].sort((a, b) => a.order - b.order).map(m => ({ name: m.name, order: m.order })),
       },
+      /** 起動モード（docs/02 §11）。bath はお風呂モードの進み具合（寝室なら null）、whereabouts は家族の居場所（今日登録したもの） */
+      mode: modeOf(household),
+      bath: modeOf(household) === 'bath' ? (household.bath ?? null) : null,
+      whereabouts: modeView(household, now).whereabouts,
       taskLabels: TASK_LABELS,
     });
+  });
+
+  // ---- 起動モード（遠隔切替。docs/02 §11.4） ----
+  router.get('/api/family/mode', async (req: Request, res: Response) => {
+    requireFamily(req);
+    const h = await mustHousehold(ctx, hhOf(req));
+    ok(res, modeView(h, ctx.clock()));
+  });
+
+  router.put('/api/family/mode', async (req: Request, res: Response) => {
+    requireFamily(req);
+    const hh = hhOf(req);
+    const parsed = ModeSchema.safeParse(bodyOf(req));
+    if (!parsed.success) throw new HttpError(400, 'mode は bedroom か bath です');
+    await mustHousehold(ctx, hh);
+    const now = ctx.clock();
+    const r = await switchMode(ctx, hh, parsed.data.mode, 'family', now);
+    ok(res, modeView(r.household, now));
+  });
+
+  // ---- 家族の居場所（本人の「○○さんはどこ？」への答え。docs/02 §11.4） ----
+  router.get('/api/family/whereabouts', async (req: Request, res: Response) => {
+    requireFamily(req);
+    const h = await mustHousehold(ctx, hhOf(req));
+    const now = ctx.clock();
+    ok(res, { whereabouts: h.whereabouts ?? null, say: whereaboutsSay(h, now) });
+  });
+
+  router.put('/api/family/whereabouts', async (req: Request, res: Response) => {
+    requireFamily(req);
+    const hh = hhOf(req);
+    const parsed = WhereaboutsSchema.safeParse(bodyOf(req));
+    if (!parsed.success) {
+      const msg = parsed.error.issues.slice(0, 3).map(i => `${i.path.join('.') || '(居場所)'}: ${i.message}`).join(' / ');
+      throw new HttpError(400, `居場所の形が正しくありません: ${msg}`);
+    }
+    await mustHousehold(ctx, hh);
+    const now = ctx.clock();
+    const { place, backAt, note } = parsed.data;
+    // place: null は「消す」（家族が家にいるときなど）
+    const whereabouts = place === null
+      ? null
+      : { place, backAt: backAt ?? null, ...(note?.trim() ? { note: note.trim() } : {}), updatedAt: now };
+    await ctx.store.updateHousehold(hh, { whereabouts, updatedAt: now });
+    await writeLedger(ctx, hh, now, {
+      actor: ACTOR, kind: 'system', name: 'whereabouts_updated',
+      args: whereabouts ? { place: whereabouts.place, backAt: whereabouts.backAt } : { cleared: true },
+    });
+    logEvent('whereabouts_updated', { hh, backAt });
+    const h = await mustHousehold(ctx, hh);
+    ok(res, { whereabouts: h.whereabouts ?? null, say: whereaboutsSay(h, now) });
+  });
+
+  // 居場所を消す（家族が家にいるときなど）。本人には「出かけています。もうすぐ帰ってきますよ」と答える
+  router.delete('/api/family/whereabouts', async (req: Request, res: Response) => {
+    requireFamily(req);
+    const hh = hhOf(req);
+    await mustHousehold(ctx, hh);
+    const now = ctx.clock();
+    await ctx.store.updateHousehold(hh, { whereabouts: null, updatedAt: now });
+    await writeLedger(ctx, hh, now, { actor: ACTOR, kind: 'system', name: 'whereabouts_updated', args: { cleared: true } });
+    const h = await mustHousehold(ctx, hh);
+    ok(res, { whereabouts: null, say: whereaboutsSay(h, now) });
   });
 
   // ---- 引用から飛ぶ先 ----
@@ -353,6 +449,16 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
     ok(res, { ok: true, killSwitch: on });
   });
 
+  // ---- 審査員の入口用: デモ世帯（hh_demo）の端末トークン（docs/02 §11.5） ----
+  // 入口ページがこれを localStorage に書いて /device を開く（URL にトークンを載せない）。hh_demo 以外の世帯は 404
+  router.get('/api/family/demo-device', (req: Request, res: Response) => {
+    requireFamily(req);
+    const hh = hhOf(req);
+    const token = hh === DEMO_HH ? config.deviceTokens[DEMO_HH] : undefined;
+    if (!token) throw new HttpError(404, 'デモ用の端末はありません');
+    ok(res, { hh, token });
+  });
+
   // ---- できること・できないこと ----
   router.get('/api/family/capabilities', (req: Request, res: Response) => {
     requireFamily(req);
@@ -369,7 +475,9 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
       ? await ctx.familyNotify.ack(hh, params.nt, APPROVER, ctx.clock(), { falseAlarm: true })
       : await ctx.familyNotify.ack(hh, params.nt, APPROVER, ctx.clock());
     if (!notice) throw new HttpError(404, 'この通知は見つかりません');
-    ok(res, { ok: true, notice });
+    // L4 を立てた通知なら、その場で L4 を下ろす（安心文を止める。nextPrompt 側の解除は保険）
+    const l4Cleared = await clearL4ForNotice(ctx, hh, params.nt, ctx.clock());
+    ok(res, { ok: true, notice, l4Cleared });
   });
 
   // ---- 再生モード ----

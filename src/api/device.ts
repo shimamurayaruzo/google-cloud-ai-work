@@ -6,9 +6,11 @@ import type { Request, Response } from 'express';
 import type { AppContext } from '../services.js';
 import { nextPrompt } from '../state/day.js';
 import { processReply } from '../state/turn.js';
+import { modeOf, modeView, switchMode } from '../state/mode.js';
+import { handleUtterance } from '../state/utterance.js';
 import { logEvent } from '../log.js';
 import { dateKey } from '../time.js';
-import type { HouseholdId, Prompt, ReplySource } from '../types.js';
+import type { HouseholdId, HouseholdMode, Prompt, ReplySource } from '../types.js';
 import { requireDevice } from './auth.js';
 import { HttpError, ok, type Router } from './router.js';
 import { bodyOf, requireString, str } from './util.js';
@@ -33,7 +35,16 @@ export function promptForDevice(p: Prompt | null) {
     expression: p.expression,
     // L4 モードの安心文。質問ではないので、端末は返事を待たずに読み上げるだけでよい
     ...(p.isReassurance ? { isReassurance: true } : {}),
+    // 返事を求めない声かけ（お風呂の最初と最後の一言・ときたまの声かけ）。端末は返事を待たない（noAnswer も送らない）
+    ...(p.expectsReply === false ? { expectsReply: false } : {}),
+    // お風呂モードの声かけの段（start / wash / wash_recheck / teeth / end）。字幕を大きく短くする目印
+    ...(p.bathStep ? { bathStep: p.bathStep } : {}),
   };
+}
+
+export function toMode(v: unknown): HouseholdMode {
+  if (v === 'bedroom' || v === 'bath') return v;
+  throw new HttpError(400, 'mode は bedroom か bath です');
 }
 
 export function registerDeviceRoutes(router: Router, ctx: AppContext): void {
@@ -57,11 +68,41 @@ export function registerDeviceRoutes(router: Router, ctx: AppContext): void {
     });
   });
 
-  // 次に話す声かけ（今話してよいもの）
+  // 次に話す声かけ（今話してよいもの）。mode はその時点の起動モード（docs/02 §11.4）
   router.get('/api/device/next-prompt', async (req: Request, res: Response) => {
     const hh = requireDevice(req);
     const p = await nextPrompt(ctx, hh, ctx.clock());
-    ok(res, { prompt: promptForDevice(p) });
+    const household = await ctx.store.getHousehold(hh);
+    ok(res, { prompt: promptForDevice(p), mode: household ? modeOf(household) : 'bedroom' });
+  });
+
+  // 起動モード（iPad 右上の家族用ボタン。docs/02 §11.4）
+  router.get('/api/device/mode', async (req: Request, res: Response) => {
+    const hh = requireDevice(req);
+    const household = await ctx.store.getHousehold(hh);
+    if (!household) throw new HttpError(404, `世帯 ${hh} が見つかりません`);
+    ok(res, modeView(household, ctx.clock()));
+  });
+
+  router.post('/api/device/mode', async (req: Request, res: Response) => {
+    const hh = requireDevice(req);
+    const mode = toMode(bodyOf(req).mode);
+    const now = ctx.clock();
+    const r = await switchMode(ctx, hh, mode, 'device', now);
+    ok(res, modeView(r.household, now));
+  });
+
+  // 本人からの発話（声かけへの返事ではないもの。docs/02 §11.2）
+  router.post('/api/device/utterance', async (req: Request, res: Response) => {
+    const hh = requireDevice(req);
+    const body = bodyOf(req);
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    if (!text) throw new HttpError(400, 'text（文字起こしした発話）を送ってください');
+    const source: ReplySource = body.source === 'test' ? 'test' : 'ipad';
+    const now = ctx.clock();
+    logEvent('device_utterance', { hh, source, textLength: text.length });
+    const r = await handleUtterance(ctx, { hh, text: text.slice(0, 500), source, now });
+    ok(res, { turnId: r.turn.id, say: r.say, expression: r.expression, kind: r.kind });
   });
 
   // 本人の返事（1 ターン）

@@ -15,6 +15,7 @@ import { emptyRecord, transition } from './machine.js';
 import { defaultPromptText, findPlanItem, inSleepHours, resolvePlan } from './plan.js';
 import { processReply } from './turn.js';
 import { REASSURANCE_SAY } from '../agent/rules.js';
+import { bathNoAnswerMinutes, bathReturnOverdue, maybeIdleChat, modeOf, noteBathPromptDelivered, switchMode } from './mode.js';
 
 /** 計画を作るとき、これより前に過ぎた声かけは話さない（expired で作る）。朝の計画が遅れて走ったときの一斉発話を防ぐ */
 const STALE_PLAN_MINUTES = 30;
@@ -136,7 +137,11 @@ export async function enqueuePrompt(
   hh: HouseholdId,
   date: DateKey,
   task: TaskKey,
-  opts: { isRecheck?: boolean; text?: string; at?: Date } = {},
+  opts: {
+    isRecheck?: boolean; text?: string; at?: Date;
+    /** お風呂の段・返事を求めない印など（docs/02 §11） */
+    extra?: Partial<Pick<Prompt, 'bathStep' | 'expectsReply' | 'idleChat'>>;
+  } = {},
 ): Promise<Prompt> {
   const household = await requireHousehold(ctx, hh);
   const day = await ensureDay(ctx, hh, date);
@@ -147,6 +152,7 @@ export async function enqueuePrompt(
     ?? (isRecheck ? defaultPromptText(task, household, true) : item?.text ?? defaultPromptText(task, household, false));
   const prompt: Prompt = {
     id: newId('pr'), hh, date, task, text, scheduledAt: at, isRecheck, state: 'queued', expression: 'smile',
+    ...(opts.extra ?? {}),
   };
   await ctx.store.putPrompt(prompt);
   return prompt;
@@ -193,8 +199,8 @@ export async function deliverPrompt(
     state: 'delivered', deliveredAt: now, ...(ttsUrl ? { ttsUrl } : {}),
   });
 
-  // 安心文と痛みの聞き直しは確認項目の一巡ではないので、状態機械を動かさない
-  if (!prompt.isReassurance && !prompt.followup) {
+  // 安心文・痛みの聞き直し・お風呂の声かけ・返事を求めない声かけは確認項目の一巡ではないので、状態機械を動かさない
+  if (!prompt.isReassurance && !prompt.followup && !prompt.bathStep && prompt.expectsReply !== false) {
     const day = await ensureDay(ctx, hh, date);
     const { next } = transition(day.tasks[prompt.task], {
       type: 'asked', promptId: prompt.id, at: now, isRecheck: prompt.isRecheck,
@@ -207,8 +213,10 @@ export async function deliverPrompt(
     args: {
       promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck, text: prompt.text,
       ...(prompt.isReassurance ? { isReassurance: true } : {}), ...(prompt.followup ? { followup: true } : {}),
+      ...(prompt.bathStep ? { bathStep: prompt.bathStep } : {}), ...(prompt.expectsReply === false ? { expectsReply: false } : {}),
     },
   });
+  if (prompt.bathStep) await noteBathPromptDelivered(ctx, prompt, now);
   logEvent('prompt_sent', { hh, date, promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck, isReassurance: prompt.isReassurance ?? false });
   return delivered;
 }
@@ -218,37 +226,52 @@ export async function deliverPrompt(
  * 今日の期限が来た queued の先頭を delivered にして返す。killSwitch なら null（L4 の安心文も出さない）。
  * - L4 モード中（day.l4）: 通常の声かけは出さず、3 分ごとに安心文（isReassurance）だけを返す。
  *   該当の通知が acked / closed になっていたら解除して通常に戻る（state/l4.ts）
+ * - お風呂モード（docs/02 §11.3）: お風呂の声かけ（bath / お風呂の歯磨き）と talk だけを出す。寝室の声かけは queued のまま。
+ *   お風呂の声かけは家族が切り替えたものなので就寝時間帯でも出す。自動の戻りの時刻を過ぎていれば寝室へ戻す（予約が届かなかったときの保険）
  * - 就寝時間帯（policy.sleepHours）: 通常の声かけは出さない。期限が来た声かけは話さずに expired にする
+ * - 寝室モードで話すものが無ければ、条件がそろったときだけ「ときたまの声かけ」（talk）を 1 つ作る（state/mode.ts）
  * 再確認の声かけで、その項目が既に rechecking でなくなっていれば（済んだ等）話さずに expired にする。
  */
 export async function nextPrompt(ctx: AppContext, hh: HouseholdId, now: Date): Promise<Prompt | null> {
-  const household = await requireHousehold(ctx, hh);
+  let household = await requireHousehold(ctx, hh);
   if (household.killSwitch) return null;
   const date = dateKey(now);
   const day = await ensureDay(ctx, hh, date);
 
   const l4 = await currentL4(ctx, hh, date, day, now);
   if (l4) return nextReassurance(ctx, hh, date, l4, now);
+  day.l4 = null;
 
-  const due = await ctx.store.listDuePrompts(hh, date, now);
-  if (due.length === 0) return null;
+  if (bathReturnOverdue(household, now)) {
+    household = (await switchMode(ctx, hh, 'bedroom', 'system', now)).household;
+  }
+  const inBath = modeOf(household) === 'bath';
+
+  let due = await ctx.store.listDuePrompts(hh, date, now);
+  // お風呂の間は寝室の声かけを出さない（queued のまま。戻ったとき 30 分以上前のものは expired）。
+  // 寝室では、お風呂の終わりの一言を先に話す
+  due = inBath
+    ? due.filter(p => p.bathStep || p.task === 'bath' || p.task === 'talk')
+    : [...due.filter(p => p.bathStep), ...due.filter(p => !p.bathStep)];
   if (inSleepHours(household, now)) {
-    for (const p of due) await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
-    logEvent('prompts_expired_sleep_hours', { hh, date, count: due.length });
-    return null;
+    const asleep = due.filter(p => !p.bathStep);
+    for (const p of asleep) await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
+    if (asleep.length > 0) logEvent('prompts_expired_sleep_hours', { hh, date, count: asleep.length });
+    due = due.filter(p => p.bathStep);
+    if (due.length === 0) return null;
   }
   for (const p of due) {
     if (p.isReassurance) {
       await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
       continue;
     }
-    if (p.isRecheck && day.tasks[p.task]?.state !== 'rechecking') {
+    if (p.isRecheck && !p.bathStep && day.tasks[p.task]?.state !== 'rechecking') {
       await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
       continue;
     }
     return deliverPrompt(ctx, p, now, { synthesize: true });
   }
-  return null;
+  return inBath ? null : maybeIdleChat(ctx, household, day, now);
 }
 
 /** L4 モードの安心文。直近の安心文（無ければ L4 を立てた時刻）から 3 分以上たっていれば 1 つ作って話す */
@@ -280,15 +303,18 @@ export async function expireUnansweredPrompts(
   olderThanMinutes = 10,
 ): Promise<number> {
   const date = dateKey(now);
-  const limit = addMinutes(now, -olderThanMinutes).getTime();
-  const stale = (await ctx.store.listPrompts(hh, date))
-    .filter(p => p.state === 'delivered' && (p.deliveredAt ?? p.scheduledAt).getTime() <= limit);
   const household = await requireHousehold(ctx, hh);
+  const limit = addMinutes(now, -olderThanMinutes).getTime();
+  // お風呂の声かけは「体を洗いましょうか」から notifyAfterMinutes で家族へ届くよう、短く締め切る（docs/02 §11.3）
+  const bathLimit = addMinutes(now, -Math.min(olderThanMinutes, bathNoAnswerMinutes(household))).getTime();
+  const stale = (await ctx.store.listPrompts(hh, date))
+    .filter(p => p.state === 'delivered' && (p.deliveredAt ?? p.scheduledAt).getTime() <= (p.bathStep ? bathLimit : limit));
   const sleeping = inSleepHours(household, now);
   let n = 0;
   for (const p of stale) {
-    // 安心文は質問ではない。就寝時間帯は無反応判定の対象外（criteria 3-3）。どちらも返事なしとして扱わない
-    if (p.isReassurance || sleeping) {
+    // 安心文と返事を求めない声かけは質問ではない。就寝時間帯は無反応判定の対象外（criteria 3-3。お風呂の声かけは除く）。
+    // どれも返事なしとして扱わない
+    if (p.isReassurance || p.expectsReply === false || (sleeping && !p.bathStep)) {
       await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
       continue;
     }
