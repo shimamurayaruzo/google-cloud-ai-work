@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>紙芝居④ 審査員の入口</title>
+<style>
+:root{--bg:#f4f6f3;--paper:#fff;--ink:#1f2a24;--ink-2:#4a5650;--ink-3:#7a8680;--line:#d9dfda;--accent:#1f6f5b;--accent-soft:#e3efe9;--amber:#a86f14;--amber-soft:#f6ecd6;--red:#b4443c;--red-soft:#f7e3e0;--blue:#3d5a8a;--blue-soft:#e6ecf5;--pen:#c0392b;
+--font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.7}
+.wrap{max-width:1280px;margin:0 auto;padding:16px 16px 60px}
+.mk-nav{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;color:var(--ink-3);margin-bottom:10px}
+.mk-nav a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+.mk-nav a.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--ink)}
+h1.mk{font-size:22px;margin:0 0 4px}
+.lede{color:var(--ink-2);margin:0 0 14px}
+.kime{background:#fffdf8;border:1px solid #ecd9d4;border-left:5px solid var(--pen);padding:12px 16px 6px;margin:0 0 18px}
+.kime h2{font-size:15px;color:var(--pen);margin:0 0 6px;letter-spacing:.04em}
+.kime ol{margin:0;padding-left:1.5em}
+.kime li{margin:0 0 8px}
+.kime .an{color:var(--ink-2)}
+.kime .aka{display:inline-block;min-width:12em;border-bottom:1px dashed var(--pen);color:var(--pen);font-size:13px;margin-left:6px}
+.scenes{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;align-items:center;font-size:13px;color:var(--ink-3)}
+.scenes button{font:inherit;font-size:13px;padding:6px 10px;border:1px solid var(--line);background:var(--paper);border-radius:6px;cursor:pointer;color:var(--ink-2)}
+.scenes button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.clicks{margin-left:auto;font-size:13px;color:var(--accent);font-weight:700}
+
+/* ===== ブラウザの枠（PC） ===== */
+.browser{background:var(--paper);border:1px solid #c9d0cb;border-radius:10px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.bar{background:#e9ecea;padding:8px 12px;display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-3)}
+.bar i{width:11px;height:11px;border-radius:50%;background:#cfd5d1;display:inline-block}
+.bar .url{flex:1;background:#fff;border-radius:6px;padding:3px 10px;margin-left:8px}
+.site{padding:26px 30px 34px;min-height:640px}
+.brand{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+.brand h1{font-size:26px;margin:0;letter-spacing:.02em}
+.brand p{margin:2px 0 0;color:var(--ink-2)}
+.brand .who{font-size:12.5px;color:var(--ink-3);text-align:right}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+@media (max-width:980px){.cols{grid-template-columns:1fr}}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card h2{font-size:16px;margin:0 0 8px}
+.meta{font-size:12.5px;color:var(--ink-3)}
+/* 合言葉 */
+.login{max-width:520px}
+.login .row{display:flex;gap:8px;margin-top:8px}
+.login input{flex:1;font:inherit;font-size:17px;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+.btn{font:inherit;font-size:15px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-weight:700}
+.btn.sec{background:var(--paper);color:var(--accent)}
+.btn.sm{font-size:13px;padding:5px 12px;font-weight:400}
+/* 3 つのボタン */
+.three{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:14px}
+@media (max-width:900px){.three{grid-template-columns:1fr}}
+.big{display:block;text-align:left;font:inherit;border-radius:14px;padding:20px 20px 18px;cursor:pointer;border:2px solid var(--line);background:var(--paper);color:var(--ink);text-decoration:none}
+.big:hover{border-color:var(--accent)}
+.big .n{font-size:13px;color:var(--ink-3);font-weight:700}
+.big .t{display:block;font-size:21px;font-weight:700;line-height:1.4;margin:4px 0 6px}
+.big .d{font-size:13.5px;color:var(--ink-2)}
+.big.main{background:var(--accent);border-color:var(--accent);color:#fff}
+.big.main .n,.big.main .d{color:#d6ebe3}
+/* 再生 */
+.rp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.rp-head h2{margin:0}
+.score{font-size:15px;font-weight:700;padding:4px 12px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+.score.run{background:var(--amber-soft);color:var(--amber)}
+.prog{height:6px;background:#e6eae7;border-radius:3px;overflow:hidden;margin:6px 0 4px}
+.prog div{height:100%;background:var(--accent);width:0;transition:width .3s}
+.opts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
+.opts label{display:flex;gap:4px;align-items:center}
+table.tl{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
+.tl th{text-align:left;font-size:12px;color:var(--ink-3);font-weight:700;padding:6px 8px;border-bottom:2px solid var(--line);white-space:nowrap}
+.tl td{padding:8px;border-bottom:1px solid #edf0ed;vertical-align:top}
+.tl td.t{font-variant-numeric:tabular-nums;color:var(--ink-3);white-space:nowrap}
+.tl tr.hide{display:none}
+.tl tr.new{animation:fade .6s}
+.tl tr.hl td{background:#fff8e3}
+.tl tr.sys td{background:#f7f9f8;color:var(--ink-2)}
+@keyframes fade{from{background:#fff3cf}to{background:transparent}}
+.ai{color:var(--ink)}
+.me{color:#6b4f1d}
+.chip{display:inline-block;font-size:11.5px;padding:0 7px;border-radius:4px;font-weight:700;white-space:nowrap;line-height:1.8}
+.c-done{background:var(--accent-soft);color:var(--accent)}
+.c-wait{background:var(--amber-soft);color:var(--amber)}
+.c-no{background:#eceeed;color:#5d6762}
+.c-unc{background:var(--blue-soft);color:var(--blue)}
+.c-q{background:#f1ecf7;color:#6a4f8a}
+.by{display:block;font-size:11px;color:var(--ink-3)}
+.ok{color:var(--accent);font-weight:700}
+.na{color:var(--ink-3)}
+.pen{display:block;font-size:11.5px;color:var(--pen);margin-top:2px}
+.notify{display:inline-block;font-size:11.5px;font-weight:700;padding:0 6px;border-radius:4px;background:var(--amber-soft);color:var(--amber);margin-right:4px}
+.notify.l2{background:var(--accent-soft);color:var(--accent)}
+.summary{margin-top:16px;border-left:5px solid var(--accent)}
+.summary p{margin:0 0 6px;font-size:15px}
+.cite{display:inline-block;font:inherit;font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);border:0;border-radius:3px;padding:0 4px;margin-left:2px;cursor:pointer;vertical-align:1px}
+.next{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+/* 右の欄 */
+.side .card{margin-bottom:12px}
+.side h3{font-size:14px;margin:0 0 6px}
+.side ul{margin:0;padding-left:1.2em;font-size:13.5px}
+.side li{margin:2px 0}
+.side .lv{font-size:12px;font-weight:700;margin-top:8px}
+.priv{background:var(--accent-soft);border-color:#c6dfd4}
+.priv li{font-weight:700}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="mk-nav">紙芝居（下書き 2026-10-07）:
+  <a href="01-device-bedroom.html">① 母側・寝室</a>
+  <a href="02-device-bath.html">② 母側・お風呂</a>
+  <a href="03-family.html">③ 家族の画面</a>
+  <a class="on" href="04-judge-entry.html">④ 審査員の入口</a>
+  <a href="README.md">見方（README）</a>
+</nav>
+<h1 class="mk">④ 審査員の入口（PC のブラウザ）</h1>
+<p class="lede">審査員は短い時間で触ります。合言葉を入れて「① 1 日分を再生する」を押せば、声かけ → お返事 → 判定 → 通知 → 夕方の要約までが 30 秒で流れます（クリック 2 回。要約の引用を押して 3 回目）。下の画面は実際に触れます（合言葉は何を入れても通ります）。</p>
+
+<section class="kime" aria-label="決めどころ">
+  <h2>決めどころ（赤を入れてください）</h2>
+  <ol>
+    <li><b>合言葉の入れ方</b> <span class="an">— 案: この入口で 1 回だけ入れる（URL には入れない）。12 時間有効。合言葉は提出フォームに書く。</span><span class="aka">赤:</span></li>
+    <li><b>3 つのボタンの文言・順番・大きさ</b> <span class="an">— 案: ① 再生を左に一番大きく、色付き。② 母側 と ③ 家族 は別タブで開く。</span><span class="aka">赤:</span></li>
+    <li><b>再生の速さ</b> <span class="an">— 案: 1 行ずつ約 2 秒、全体で約 30 秒。「すぐ全部見る」で飛ばせる。流し終えたら要約へ自動で移る。</span><span class="aka">赤:</span></li>
+    <li><b>判定の仕組み（規則／Gemini）を見せるか</b> <span class="an">— 案: 見せる。既定は規則で速く（LLM なし）、切り替えると Gemini で判定（<code>?agent=adk</code>、1 行 3 秒前後）。</span><span class="aka">赤:</span></li>
+    <li><b>16:00「腰がちょっと痛い」の通知の段階</b> <span class="an">— criteria 3-2 は L3（確認のお願い）、eval/scenarios/dayservice-day.json の期待値は <code>urgent</code>。画面は L3 で描いています。どちらに揃えるか。</span><span class="aka">赤:</span></li>
+  </ol>
+</section>
+
+<div class="scenes" id="scenes">場面:
+  <button data-s="login" class="on">1. 合言葉</button>
+  <button data-s="menu">2. 3 つのボタン</button>
+  <button data-s="done">3. 再生の結果</button>
+  <span class="clicks" id="clicks">ここまで 0 クリック</span>
+</div>
+
+<div class="browser">
+  <div class="bar"><i></i><i></i><i></i><span class="url">https://（提出 URL）/</span></div>
+  <div class="site">
+    <div class="brand">
+      <div>
+        <h1>見張らない見守り</h1>
+        <p>日中ひとりで過ごす認知症の母に iPad から声をかけ、予定とお返事で次の声かけを変え、夕方に家族へ様子を届けるエージェント</p>
+      </div>
+      <div class="who" id="who">審査員の方へ</div>
+    </div>
+
+    <div class="cols">
+      <main>
+        <!-- 1. 合言葉 -->
+        <section id="v-login" class="card login">
+          <h2>合言葉を入れてください</h2>
+          <p class="meta" style="margin:0">提出フォームに書いた合言葉です。テスト用の世帯（架空のサンプルデータ）が開きます。</p>
+          <div class="row"><input type="password" id="pass" placeholder="合言葉" autocomplete="off"><button class="btn" id="enter">入る</button></div>
+        </section>
+
+        <!-- 2. 3 つのボタン -->
+        <section id="v-menu" class="hidden">
+          <div class="three">
+            <button class="big main" id="playBtn"><span class="n">①</span><span class="t">1 日分を再生する<br>（30 秒）</span><span class="d">デイサービスの日の台本 14 回のお返事を流し、判定・通知・夕方の要約まで見せます。</span></button>
+            <a class="big" href="01-device-bedroom.html" target="_blank"><span class="n">②</span><span class="t">母側の画面を見る</span><span class="d">iPad の顔と字幕。寝室モードとお風呂モード。</span></a>
+            <a class="big" href="03-family.html" target="_blank"><span class="n">③</span><span class="t">家族の画面を見る</span><span class="d">今日の様子・承認・台帳・設定・今すぐ止める。</span></a>
+          </div>
+          <p class="meta" style="margin:10px 0 0">再生は本番と別の場所で動き、LINE・メール・Slack には何も送りません。</p>
+        </section>
+
+        <!-- 3. 再生 -->
+        <section id="v-replay" class="hidden">
+          <div class="card">
+            <div class="rp-head">
+              <h2>再生: デイの日（9月29日・火）</h2>
+              <span class="score run" id="score">再生中 0 / 14</span>
+            </div>
+            <div class="prog"><div id="bar"></div></div>
+            <div class="opts">
+              <button class="btn sec sm" id="skip">すぐ全部見る</button>
+              <label><input type="radio" name="by" checked> 規則で判定（速い）</label>
+              <label><input type="radio" name="by"> Gemini で判定</label>
+              <span class="meta">期待値（台本の expect）がある 13 行で、判定と通知が合っているかを見ます。</span>
+            </div>
+            <table class="tl">
+              <thead><tr><th>時刻</th><th>AI の声かけ</th><th>お母さんのお返事</th><th>判定</th><th>次の行動・通知</th><th>期待値</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="card summary hidden" id="summary">
+            <h2>夕方の「今日の様子」（再生で作った要約）</h2>
+            <p>・8:45 に「着替えたよ」とお返事があり、9:02 にデイサービスへ出発されました。<button class="cite" data-row="r7">1</button><button class="cite" data-row="r8">2</button></p>
+            <p>・16:00 に帰宅され、「腰がちょっと痛い」とおっしゃいました。そのときにお知らせ済みです。<button class="cite" data-row="r9">3</button></p>
+            <p>・16:30 の声かけにはお返事がありませんでしたが、居間で物音がありました。<button class="cite" data-row="r10">4</button></p>
+            <p>・最近 3 日と比べて、同じ質問は増えていません。</p>
+            <p class="meta">この記録は AI が声かけへのお返事から作っています。体調や病気の判断は含みません。［番号］を押すと、もとの会話の行に移ります。</p>
+            <div class="next"><a class="btn sec sm" href="03-family.html" target="_blank">③ 家族の画面で通知と承認を見る</a><a class="btn sec sm" href="01-device-bedroom.html" target="_blank">② 母側の画面を見る</a><button class="btn sec sm" id="again">もう一度再生</button></div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side">
+        <div class="card priv">
+          <h3>見張らないための約束</h3>
+          <ul>
+            <li>カメラは使いません。</li>
+            <li>音声は保存しません。</li>
+          </ul>
+          <p class="meta" style="margin:6px 0 0">文字にした短い抜粋だけを残し、7 日で削除します。テレビや来訪者の声など、ご本人の言葉か分からないものは判定しません。</p>
+        </div>
+        <div class="card">
+          <h3>できること・できないこと</h3>
+          <div class="lv"><span class="chip c-done">自動で行う</span></div>
+          <ul><li>決まった時刻の声かけと、1 回までの聞き直し</li><li>夕方の「今日の様子」（引用付き）</li></ul>
+          <div class="lv"><span class="chip c-wait">自動で行い、根拠を添える</span></div>
+          <ul><li>「痛い」「転んだ」、続けてお返事が無いときのお知らせ</li></ul>
+          <div class="lv"><span class="chip c-unc">家族の承認後に行う</span></div>
+          <ul><li>医師・ケアマネジャーへの共有、設定の変更</li></ul>
+          <div class="lv"><span class="chip" style="background:var(--red-soft);color:var(--red)">行わない</span></div>
+          <ul><li>病気の診断、本人に頼まれた外部への連絡、撮影・録音の保存</li><li>転倒などの安全確認（お風呂モードも同じ）</li></ul>
+          <p class="meta" style="margin:8px 0 0">家族の画面には「今すぐ止める」があります。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const done = (by) => `<span class="chip c-done">できたと返答</span><span class="by">${by}</span>`;
+// eval/scenarios/dayservice-day.json の 14 行（声かけの文は docs/03 §2）
+const ROWS = [
+  ['08:00', 'おはようございます。よく眠れましたか？', 'うん、まあまあ', '<span class="chip c-done">お返事あり</span><span class="by">規則</span>', '記録', 1],
+  ['08:05', 'まず、おむつを新しいのに替えましょうか', 'うん、替えた', done('規則'), '記録', 1],
+  ['08:15', '歯を磨きましょう', 'はいはい', done('規則'), '記録（自己申告）', 1],
+  ['08:25', '顔を洗ってさっぱりしましょう', null, '<span class="chip c-no">お返事なし</span><span class="by">規則（20 秒）</span>', '8:40 に聞き直しを予約', 1],
+  ['08:35', '今日はデイサービスの日です。9時にお迎えが来ます。お着替えは済みましたか？', 'まだ', '<span class="chip c-wait">まだ</span><span class="by">規則</span>', '9:00 のお迎えに合わせ 8:45 に聞き直し', 1],
+  ['08:40', 'お顔、洗えましたか？', '洗ったよ', done('規則'), '記録', 1],
+  ['08:45', 'そろそろお着替えどうですか？', '着替えたよ', done('規則'), '記録', 1],
+  ['09:02', 'お迎えは来ましたか？', '来たよ、行ってきます', done('規則'), '<span class="notify l2">お知らせ</span>家族へ「準備完了、出発」', 1],
+  ['16:00', 'おかえりなさい。今日はどうでしたか？', '疲れた。腰がちょっと痛い', '<span class="chip c-done">お返事あり</span><span class="by">規則（「痛い」）</span>', '<span class="notify">確認のお願い</span>家族へ。根拠「腰がちょっと痛い」を添える。医療の判断はしない<span class="pen">赤: 台本の期待値は urgent（決めどころ 5）</span>', 1],
+  ['16:30', 'お茶を一杯どうですか？', null, '<span class="chip c-no">お返事なし</span><span class="by">規則</span>', '居間で物音あり → 心配な状態とは扱わない', 1],
+  ['18:00', null, null, null, '夕方の「今日の様子」を作る（再生では送らない）', -1],
+  ['19:05', '夕ご飯は食べましたか？', '食べた', done('規則'), '記録', 1],
+  ['19:40', 'ご飯のあとのお薬を飲みましょう。黒い机の上に 2 錠あります', '何の薬？', '<span class="chip c-q">質問</span><span class="by">規則</span>', '「脳の薬ですよ。黒い机の上にありますよ」と答える', 0],
+  ['19:43', '（続き）', '飲んだよ', done('規則'), '記録', 1],
+  ['21:00', '歯を磨いて、そろそろお休みしましょう', 'はい、おやすみ', done('規則'), '記録（夜は家族へ通知しない）', 1],
+];
+const rowsEl = $('#rows');
+ROWS.forEach((r, i) => {
+  const tr = document.createElement('tr');
+  tr.id = 'r' + (i < 10 ? i + 1 : i);  // 18:00 の行は番号を持たない
+  if (r[5] === -1) { tr.id = 'rsum'; tr.className = 'sys'; tr.innerHTML = `<td class="t">${r[0]}</td><td colspan="4">${r[4]}</td><td class="na">—</td>`; }
+  else tr.innerHTML = `<td class="t">${r[0]}</td><td class="ai">「${r[1]}」</td><td class="me">${r[2] ? '「' + r[2] + '」' : '<span class="na">（お返事なし）</span>'}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5] ? '<span class="ok">一致</span>' : '<span class="na">期待値なし</span>'}</td>`;
+  rowsEl.append(tr);
+});
+const TURNS = ROWS.filter(r => r[5] !== -1).length; // 14
+let timer = null, shown = 0, clicks = 0;
+function setClicks(n) { clicks = n; $('#clicks').textContent = `ここまで ${n} クリック`; }
+function view(v) {
+  $('#v-login').classList.toggle('hidden', v !== 'login');
+  $('#v-menu').classList.toggle('hidden', v === 'login');
+  $('#v-replay').classList.toggle('hidden', v !== 'replay');
+  $('#who').textContent = v === 'login' ? '審査員の方へ' : 'テスト世帯でログイン中';
+  $$('#scenes button').forEach(b => b.classList.toggle('on', b.dataset.s === (v === 'replay' ? 'done' : v)));
+}
+function reveal(n) {
+  const trs = [...rowsEl.children];
+  trs.forEach((tr, i) => { tr.classList.toggle('hide', i >= n); if (i === n - 1) { tr.classList.remove('new'); void tr.offsetWidth; tr.classList.add('new'); } });
+  const turnsShown = ROWS.slice(0, n).filter(r => r[5] !== -1).length;
+  $('#bar').style.width = (n / trs.length * 100) + '%';
+  const fin = n >= trs.length;
+  $('#score').className = 'score' + (fin ? '' : ' run');
+  $('#score').textContent = fin ? '期待値との一致 13 / 13' : `再生中 ${turnsShown} / ${TURNS}`;
+  $('#summary').classList.toggle('hidden', !fin);
+}
+function play() {
+  clearInterval(timer); shown = 0; view('replay'); reveal(0);
+  timer = setInterval(() => { shown++; reveal(shown); if (shown >= rowsEl.children.length) { clearInterval(timer); $('#summary').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }, 2000);
+}
+function finish() { clearInterval(timer); shown = rowsEl.children.length; view('replay'); reveal(shown); }
+$('#enter').onclick = () => { setClicks(1); view('menu'); };
+$('#pass').onkeydown = e => { if (e.key === 'Enter') $('#enter').click(); };
+$('#playBtn').onclick = () => { setClicks(2); play(); };
+$('#skip').onclick = finish;
+$('#again').onclick = play;
+document.addEventListener('click', e => {
+  const c = e.target.closest('.cite'); if (!c) return;
+  setClicks(Math.max(clicks, 3));
+  $$('.tl tr').forEach(tr => tr.classList.remove('hl'));
+  const tr = document.getElementById(c.dataset.row); tr.classList.add('hl'); tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+$$('#scenes button').forEach(b => b.onclick = () => {
+  const s = b.dataset.s;
+  clearInterval(timer);
+  if (s === 'login') { setClicks(0); view('login'); }
+  if (s === 'menu') { setClicks(1); view('menu'); }
+  if (s === 'done') { setClicks(2); finish(); }
+});
+const h = location.hash.slice(1);
+if (h === 'menu') $$('#scenes button')[1].click(); else if (h === 'done') $$('#scenes button')[2].click(); else view('login');
+</script>
+</body>
+</html>

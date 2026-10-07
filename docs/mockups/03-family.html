@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>紙芝居③ 家族の画面</title>
+<style>
+:root{--bg:#f4f6f3;--paper:#fff;--ink:#1f2a24;--ink-2:#4a5650;--ink-3:#7a8680;--line:#d9dfda;--accent:#1f6f5b;--accent-soft:#e3efe9;--amber:#a86f14;--amber-soft:#f6ecd6;--red:#b4443c;--red-soft:#f7e3e0;--blue:#3d5a8a;--blue-soft:#e6ecf5;--pen:#c0392b;
+--font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.7}
+.wrap{max-width:1180px;margin:0 auto;padding:16px 16px 60px}
+.mk-nav{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;color:var(--ink-3);margin-bottom:10px}
+.mk-nav a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+.mk-nav a.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--ink)}
+h1{font-size:22px;margin:0 0 4px}
+.lede{color:var(--ink-2);margin:0 0 14px}
+.kime{background:#fffdf8;border:1px solid #ecd9d4;border-left:5px solid var(--pen);padding:12px 16px 6px;margin:0 0 18px}
+.kime h2{font-size:15px;color:var(--pen);margin:0 0 6px;letter-spacing:.04em}
+.kime ol{margin:0;padding-left:1.5em}
+.kime li{margin:0 0 8px}
+.kime .an{color:var(--ink-2)}
+.kime .aka{display:inline-block;min-width:12em;border-bottom:1px dashed var(--pen);color:var(--pen);font-size:13px;margin-left:6px}
+.widthsw{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink-3);margin:0 0 10px}
+.widthsw button{font:inherit;font-size:13px;padding:5px 10px;border:1px solid var(--line);background:var(--paper);border-radius:6px;cursor:pointer}
+.widthsw button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* ===== 端末の枠 ===== */
+.device{margin:0 auto;width:390px;max-width:100%;background:var(--paper);border:10px solid #24282a;border-radius:36px;overflow:hidden;position:relative;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+.device.pc{width:1000px;border-width:8px;border-radius:12px}
+.app{container-type:inline-size;height:780px;display:flex;flex-direction:column;position:relative;background:var(--bg)}
+.device.pc .app{height:760px}
+/* 上の帯 */
+.hd{background:var(--paper);border-bottom:1px solid var(--line);padding:12px 14px 0}
+.hd-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hd .ttl{font-weight:700;font-size:16px}
+.hd .st{font-size:12px;color:var(--accent)}
+.hd .st.off{color:var(--red)}
+.stopbtn{font:inherit;font-size:13px;font-weight:700;color:var(--red);background:var(--paper);border:2px solid var(--red);border-radius:99px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+.stopbtn.resume{color:var(--accent);border-color:var(--accent)}
+.tabs{display:flex;gap:2px;overflow-x:auto;margin:10px -14px 0;padding:0 8px;scrollbar-width:none}
+.tabs button{font:inherit;font-size:14px;border:0;background:none;padding:8px 10px 9px;color:var(--ink-3);cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent}
+.tabs button.on{color:var(--ink);font-weight:700;border-bottom-color:var(--accent)}
+.badge{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;text-align:center;margin-left:3px;padding:0 5px}
+.pausebar{background:var(--red-soft);color:var(--red);font-size:13px;padding:8px 14px;display:flex;justify-content:space-between;align-items:center}
+.body{flex:1;overflow-y:auto;padding:12px 12px 30px}
+.pane{display:none}
+.pane.on{display:block}
+/* PC 幅では 2 列 */
+.grid{display:grid;gap:12px}
+@container (min-width:720px){.grid.two{grid-template-columns:1fr 1fr}.grid.two .span{grid-column:1/3}}
+/* 部品 */
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card h3{font-size:14px;margin:0 0 8px;color:var(--ink-2);letter-spacing:.04em}
+.card h3 .r{float:right;font-weight:400;font-size:12px;color:var(--ink-3)}
+.meta{font-size:12.5px;color:var(--ink-3)}
+.conclusion{border-left:5px solid var(--amber);background:var(--amber-soft);border-color:#ecd9b3}
+.conclusion .big{font-size:18px;font-weight:700;line-height:1.5}
+.chip{display:inline-block;font-size:11.5px;padding:0 7px;border-radius:4px;font-weight:700;white-space:nowrap;line-height:1.8}
+.c-done{background:var(--accent-soft);color:var(--accent)}
+.c-wait{background:var(--amber-soft);color:var(--amber)}
+.c-no{background:#eceeed;color:#5d6762}
+.c-unc{background:var(--blue-soft);color:var(--blue)}
+.c-red{background:var(--red-soft);color:var(--red)}
+.rows{list-style:none;margin:0;padding:0}
+.rows li{display:grid;grid-template-columns:46px 1fr auto;gap:2px 8px;padding:9px 0;border-top:1px solid #edf0ed;align-items:start}
+.rows li:first-child{border-top:0}
+.rows .t{font-variant-numeric:tabular-nums;color:var(--ink-3);font-size:13px;padding-top:1px}
+.rows .q{font-size:14px}
+.rows .q b{font-weight:700}
+.rows .sub{grid-column:2/4;font-size:12.5px;color:var(--ink-3)}
+.link{color:var(--accent);font-size:12.5px;text-decoration:none;border-bottom:1px dotted var(--accent);cursor:pointer;white-space:nowrap;background:none;border-top:0;border-left:0;border-right:0;padding:0;font-family:inherit}
+.cite{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:3px;padding:0 4px;margin-left:2px;cursor:pointer;vertical-align:1px;border:0;font-family:inherit}
+.notice{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px}
+.notice.l3{border-left:4px solid var(--amber)}
+.notice.l2{border-left:4px solid var(--accent)}
+.notice .nh{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.notice .nb{font-size:14px;margin:4px 0 8px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.btn{font:inherit;font-size:13.5px;padding:7px 12px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn.sec{background:var(--paper);color:var(--accent)}
+.btn.ghost{background:var(--paper);color:var(--ink-2);border-color:var(--line)}
+.btn.danger{background:var(--red);border-color:var(--red)}
+.btn:disabled{opacity:.45;cursor:default}
+.report p{margin:0 0 6px;font-size:14.5px}
+.report .sec{font-weight:700;font-size:13px;color:var(--ink-2);margin:10px 0 2px}
+.report .fine{font-size:12.5px;color:var(--ink-3)}
+/* 計画 */
+.plan li{grid-template-columns:76px 1fr auto}
+.plan input[type=time]{font:inherit;font-size:14px;width:72px;border:1px solid var(--line);border-radius:6px;padding:2px 4px;background:var(--paper)}
+.plan .say{font-size:12.5px;color:var(--ink-3);grid-column:2/4}
+.sw{position:relative;width:38px;height:22px;border-radius:11px;background:var(--accent);display:inline-block;cursor:pointer}
+.sw::after{content:"";position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff}
+.sw.off{background:#c8cfcb}
+.sw.off::after{right:auto;left:3px}
+/* 台帳 */
+.counts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center}
+.counts div{background:var(--bg);border-radius:8px;padding:6px 2px}
+.counts b{display:block;font-size:22px;line-height:1.2}
+.counts span{font-size:11px;color:var(--ink-3)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
+.filters button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--paper);border-radius:99px;padding:2px 10px;cursor:pointer;color:var(--ink-2)}
+.filters button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.who{font-size:11px;padding:0 6px;border-radius:3px;font-weight:700;white-space:nowrap}
+.w-agent{background:var(--accent-soft);color:var(--accent)}
+.w-ops{background:var(--blue-soft);color:var(--blue)}
+.w-fam{background:var(--amber-soft);color:var(--amber)}
+.ev{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+/* 設定 */
+label.f{display:block;font-size:12.5px;color:var(--ink-3);margin:10px 0 3px}
+input.tx,select.tx,textarea.tx{font:inherit;font-size:15px;width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--paper);color:var(--ink)}
+textarea.tx{min-height:84px;line-height:1.6}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pills button{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--paper);border-radius:99px;padding:5px 12px;cursor:pointer}
+.pills button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
+.preview{background:#fbf7ef;border:1px solid #eadfcb;border-radius:10px;padding:10px 12px;font-size:16px;font-weight:700;color:#4f4536;margin-top:8px}
+.preview small{display:block;font-size:11.5px;font-weight:400;color:#8a7a62}
+.apitag{display:inline-block;font-size:11px;padding:0 6px;border-radius:3px;background:var(--amber-soft);color:var(--amber);font-weight:700;margin-left:4px;vertical-align:1px}
+.seg{display:flex;border:1px solid var(--accent);border-radius:10px;overflow:hidden}
+.seg button{flex:1;font:inherit;font-size:15px;padding:9px;border:0;background:var(--paper);color:var(--accent);cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff;font-weight:700}
+.order li{grid-template-columns:28px 1fr auto}
+.order .n{font-weight:700;color:var(--accent);font-size:16px}
+.arrows button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--paper);border-radius:6px;padding:0 6px;cursor:pointer;color:var(--ink-2)}
+.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.inline input.tx{width:auto}
+/* できること */
+.lv{border-top:1px solid var(--line);padding:10px 0}
+.lv:first-of-type{border-top:0}
+.lv h4{margin:0 0 2px;font-size:15px}
+.lv p{margin:0 0 4px;font-size:13.5px;color:var(--ink-2)}
+.lv ul{margin:0;padding-left:1.2em;font-size:13.5px}
+/* 下から出る紙 */
+.sheet-bg{position:absolute;inset:0;background:rgba(20,26,23,.35);display:none;align-items:flex-end;z-index:5}
+.sheet-bg.on{display:flex}
+.sheet{background:var(--paper);width:100%;border-radius:16px 16px 0 0;padding:16px 16px 22px;max-height:88%;overflow:auto}
+.device.pc .sheet-bg{align-items:center;justify-content:center}
+.device.pc .sheet{width:480px;border-radius:14px}
+.sheet h3{margin:0 0 6px;font-size:16px}
+.conv{margin:10px 0}
+.conv .ai,.conv .me{border-radius:12px;padding:8px 11px;margin:6px 0;font-size:14.5px;max-width:88%}
+.conv .ai{background:var(--accent-soft)}
+.conv .me{background:#fbf3e4;margin-left:auto}
+.conv small{display:block;font-size:11px;color:var(--ink-3)}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:4px 10px;font-size:13.5px;margin:8px 0}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="mk-nav">紙芝居（下書き 2026-10-07）:
+  <a href="01-device-bedroom.html">① 母側・寝室</a>
+  <a href="02-device-bath.html">② 母側・お風呂</a>
+  <a class="on" href="03-family.html">③ 家族の画面</a>
+  <a href="04-judge-entry.html">④ 審査員の入口</a>
+  <a href="README.md">見方（README）</a>
+</nav>
+<h1>③ 家族の画面（スマホが主、PC でも同じもの）</h1>
+<p class="lede">LINE の通知から開いて、様子を確かめ、承認し、設定する画面です。チャット窓ではありません。中の文言と数字はすべて架空のサンプルで、「今日」の中身は report-design.md 1 節の例文をそのまま使っています（画面の時刻は 18:05 のつもり）。</p>
+
+<section class="kime" aria-label="決めどころ">
+  <h2>決めどころ（赤を入れてください）</h2>
+  <ol>
+    <li><b>タブの数と並び</b> <span class="an">— 案: 今日／計画／承認待ち／台帳／設定／できること の 6 つを上に並べ、「今すぐ止める」は右上に常に出す。スマホでは横に流れます。下の帯（アプリ風）に 5 つ、も可。</span><span class="aka">赤:</span></li>
+    <li><b>居場所の登録の形</b> <span class="an">— 案: 行き先を選ぶ＋帰る時刻、読み上げる文はその場で見える。帰る時刻を過ぎたら「もうすぐ帰ってきます」に変える。<b>API に未定義</b>なので、決まったら docs/02 と src/api/README.md に足します。</span><span class="aka">赤:</span></li>
+    <li><b>「誤報だった」を押したときの扱い</b> <span class="an">— 案: 通知を閉じ、台帳に「誤報」と残し、判定基準（criteria 4 節の誤検知の記録）の見直し材料にする。本人には何も言わない。</span><span class="aka">赤:</span></li>
+    <li><b>要約の引用の見せ方</b> <span class="an">— 案: 文の後ろに小さな番号［1］。押すと下から会話が出る（AI の声かけ → お返事 → 判定 → 次の行動）。下線リンクにする、も可。</span><span class="aka">赤:</span></li>
+    <li><b>承認待ちの「一文直して承認」</b> <span class="an">— 案: 共有の文を直せる欄を最初から開いておく。直した場合は台帳に「ご家族が直した」と残す。</span><span class="aka">赤:</span></li>
+  </ol>
+</section>
+
+<div class="widthsw">表示幅: <button class="on" data-w="sp">スマホ（390px）</button><button data-w="pc">PC（1000px）</button></div>
+
+<div class="device" id="device">
+<div class="app">
+  <header class="hd">
+    <div class="hd-row">
+      <div><div class="ttl">見守り ・ ○○家</div><div class="st" id="runState">● 動いています ・ 寝室モード</div></div>
+      <button class="stopbtn" id="stopBtn">今すぐ止める</button>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-p="today" class="on">今日</button>
+      <button data-p="plan">計画</button>
+      <button data-p="appr">承認待ち<span class="badge">2</span></button>
+      <button data-p="ledger">台帳</button>
+      <button data-p="settings">設定</button>
+      <button data-p="caps">できること</button>
+    </nav>
+  </header>
+  <div class="pausebar" id="pausebar" style="display:none"><span>18:06 から止めています。声かけもお知らせもしません。</span><button class="btn sec" id="resumeBtn" style="padding:3px 10px">再開する</button></div>
+
+  <div class="body">
+  <!-- ===== 今日 ===== -->
+  <section class="pane on" id="p-today">
+    <div class="grid two">
+      <div class="card conclusion span">
+        <div class="meta">今日の様子 10月8日（木） ・ 18:00 に LINE でお届け済み</div>
+        <div class="big">今日は1件、確認をお願いしたいことがあります。</div>
+      </div>
+
+      <div class="card">
+        <h3>お返事の記録 <span class="r">声かけ 9 回</span></h3>
+        <ul class="rows">
+          <li><span class="t">8:00</span><span class="q"><b>起床</b>「うん、まあまあ」</span><span class="chip c-done">お返事あり</span></li>
+          <li><span class="t">9:00</span><span class="q"><b>着替え</b>「まだ」</span><span class="chip c-wait">まだ</span><span class="sub">10:00 のデイサービスに合わせて 9:15 に聞き直し</span></li>
+          <li><span class="t">9:15</span><span class="q"><b>着替え</b>「着替えたよ」</span><span class="chip c-done">できたと返答</span><span class="sub"><button class="link" data-turn="dress">会話を見る ›</button></span></li>
+          <li><span class="t">12:10</span><span class="q"><b>昼食</b>「食べたよ」</span><span class="chip c-done">できたと返答</span></li>
+          <li><span class="t">13:40</span><span class="q"><b>水分</b>（お返事なし）</span><span class="chip c-no">お返事なし</span><span class="sub">居間で物音があったので、心配な状態とは扱いません。15:00 にもう一度</span></li>
+          <li><span class="t">15:00</span><span class="q"><b>水分</b>「はい、飲んだ」</span><span class="chip c-done">お返事あり</span></li>
+          <li><span class="t">15:30</span><span class="q"><b>お茶</b>（テレビの音だけ）</span><span class="chip c-unc">判断できない</span><span class="sub">お母さまの声か分からないので、決めつけていません <button class="link" data-turn="tv">会話を見る ›</button></span></li>
+        </ul>
+        <p class="meta" style="margin:8px 0 0">記録は「お母さまがそう答えた」ものです。実際にできたかは確かめていません。</p>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:12px">
+          <h3>気になったこと</h3>
+          <ul class="rows">
+            <li><span class="t">11:32</span><span class="q">「ちょっと腰が痛いの」とおっしゃいました。</span><span></span><span class="sub">そのときにお知らせ済み。15:00 に「腰はどうですか」と聞き直したところ「もう大丈夫」とのことでした。 <button class="link" data-turn="back">会話を見る ›</button></span></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>今日のお知らせ <span class="r">2 件</span></h3>
+          <div class="notice l3" id="n1">
+            <div class="nh"><span class="chip c-wait">確認のお願い</span><span class="meta">11:32 ・ LINE → 長男</span></div>
+            <div class="nb">お母さまが「ちょっと腰が痛いの」とおっしゃいました。</div>
+            <div class="btns" id="n1btns">
+              <span class="chip c-done" style="align-self:center">確認済み 11:41 長男</span>
+              <button class="btn ghost" data-false="n1">誤報だった</button>
+            </div>
+          </div>
+          <div class="notice l2">
+            <div class="nh"><span class="chip c-done">お知らせ</span><span class="meta">9:15 ・ LINE → 長男 ・ 返信不要</span></div>
+            <div class="nb">お着替えが済んだとお返事がありました（準備完了）。</div>
+          </div>
+          <p class="meta" style="margin:8px 0 0"><button class="link" id="demoWaiting">（紙芝居）まだ確認していないときの見た目</button></p>
+        </div>
+      </div>
+
+      <div class="card report span">
+        <h3>夕方の「今日の様子」（LINE と同じ文） <span class="r">［番号］を押すと会話が出ます</span></h3>
+        <p class="sec">お返事の記録</p>
+        <p>・9:15 の声かけに「着替えたよ」とお返事がありました（9:00 は「まだ」でしたので、10:00 のデイサービスに合わせて聞き直しました）。<button class="cite" data-turn="dress">1</button></p>
+        <p>・12:10 お昼ごはんの声かけに「食べたよ」とお返事がありました。<button class="cite" data-turn="lunch">2</button></p>
+        <p>・15:00 お水の声かけにお返事がありました。<button class="cite" data-turn="water">3</button></p>
+        <p class="sec">気になったこと</p>
+        <p>・11:32 「ちょっと腰が痛いの」とおっしゃいました。そのときにお知らせ済みです。15:00 に「腰はどうですか」と聞き直したところ「もう大丈夫」とのことでした。<button class="cite" data-turn="back">4</button></p>
+        <p class="sec">お知らせの続き</p>
+        <p>・ありません。</p>
+        <p class="sec">昨日までとの比較</p>
+        <p>・同じ質問（「今日は何曜日」）は今日 6 回記録しました。本日はデイサービスの予定があるため、在宅日どうしの回数比較には含めていません。</p>
+        <p class="sec">この記録について</p>
+        <p class="fine">・この記録は AI が声かけへのお返事から作っています。体調や病気の判断は含みません。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 計画 ===== -->
+  <section class="pane" id="p-plan">
+    <div class="grid two">
+      <div class="card span">
+        <div class="inline" style="justify-content:space-between">
+          <div><div class="meta">明日の声かけ計画</div><div style="font-weight:700;font-size:17px">10月9日（金） ・ デイの日</div></div>
+          <span class="chip c-wait" id="planState">まだ承認していません</span>
+        </div>
+        <p class="meta" style="margin:6px 0 0">時刻を直してから「この計画で承認する」を押すと、明日の朝から使います。止めたい声かけは右のスイッチで外せます。</p>
+      </div>
+      <div class="card">
+        <h3>朝</h3>
+        <ul class="rows plan">
+          <li><input type="time" value="08:00"><span class="q">起床の挨拶</span><span class="sw"></span><span class="say">「おはようございます。よく眠れましたか？」</span></li>
+          <li><input type="time" value="08:05"><span class="q">おむつ交換</span><span class="sw"></span><span class="say">「まず、おむつを新しいのに替えましょうか」</span></li>
+          <li><input type="time" value="08:15"><span class="q">歯磨き</span><span class="sw"></span><span class="say">「歯を磨きましょう」</span></li>
+          <li><input type="time" value="08:25"><span class="q">洗顔</span><span class="sw"></span><span class="say">「顔を洗ってさっぱりしましょう」</span></li>
+          <li><input type="time" value="08:35"><span class="q">着替え</span><span class="sw"></span><span class="say">「今日はデイサービスの日です。9時にお迎えが来ます。お着替えは済みましたか？」</span></li>
+          <li><input type="time" value="08:50"><span class="q">持ち物</span><span class="sw"></span><span class="say">「持ち物はかばんに入っていますか？」</span></li>
+          <li><input type="time" value="09:00"><span class="q">お迎え</span><span class="sw"></span><span class="say">「お迎えは来ましたか？」</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>夕方・夜</h3>
+        <ul class="rows plan">
+          <li><input type="time" value="16:00"><span class="q">帰宅</span><span class="sw"></span><span class="say">「おかえりなさい。今日はどうでしたか？」</span></li>
+          <li><input type="time" value="16:30"><span class="q">水分</span><span class="sw"></span><span class="say">「お茶を一杯どうですか？」</span></li>
+          <li><input type="time" value="18:00"><span class="q">ご家族へ今日の様子</span><span class="sw"></span></li>
+          <li><input type="time" value="19:00"><span class="q">夕食</span><span class="sw off"></span><span class="say">家族が在宅の日は外す（例）</span></li>
+          <li><input type="time" value="19:40"><span class="q">服薬</span><span class="sw"></span><span class="say">「ご飯のあとのお薬を飲みましょう。黒い机の上に 2 錠あります」</span></li>
+          <li><input type="time" value="21:00"><span class="q">就寝準備</span><span class="sw"></span><span class="say">「歯を磨いて、そろそろお休みしましょう」</span></li>
+        </ul>
+        <h3 style="margin-top:14px">お風呂モード（切り替えたときだけ）</h3>
+        <ul class="rows plan">
+          <li><span class="t">+10 分</span><span class="q">体を洗う</span><span class="sw"></span><span class="say">「そろそろ体を洗いましょうか」</span></li>
+          <li><span class="t">+15 分</span><span class="q">歯磨き</span><span class="sw"></span><span class="say">「歯を磨きましょう」</span></li>
+        </ul>
+      </div>
+      <div class="span btns"><button class="btn" id="approvePlan">この計画で承認する</button><button class="btn ghost">きのうと同じにする</button></div>
+    </div>
+  </section>
+
+  <!-- ===== 承認待ち ===== -->
+  <section class="pane" id="p-appr">
+    <div class="grid two">
+      <div class="card" id="ap1">
+        <div class="inline" style="justify-content:space-between"><span class="chip c-wait">共有の承認</span><span class="meta">10月8日 17:50 にお願い</span></div>
+        <h3 style="margin-top:8px;color:var(--ink);font-size:15px">ケアマネジャー（○○さん）へ、最近 1 週間の様子を共有</h3>
+        <dl class="kv">
+          <dt>期間</dt><dd>10月1日〜10月7日</dd>
+          <dt>項目</dt><dd>着替え・食事・服薬・同じ質問の回数</dd>
+          <dt>ご本人</dt><dd>10月7日 19:00「明日、ケアマネさんに最近の様子をお伝えしてもいいですか」に「いいよ」とお返事 <button class="link" data-turn="consent">会話 ›</button></dd>
+        </dl>
+        <label class="f">共有する文（直してから承認できます）</label>
+        <textarea class="tx">この 1 週間、朝のお着替えは 7 日中 6 日で「着替えた」とお返事がありました。デイの日は 1 回目の声かけで「まだ」が多く、10 分後の聞き直しで済んでいます。夕食後のお薬は 7 日とも「飲んだ」とお返事がありました。同じ質問（「今日は何曜日」）は 1 日 2〜6 回でした。いずれもご本人のお返事による記録で、実際にできたかは確かめていません。</textarea>
+        <div class="btns" style="margin-top:8px"><button class="btn" data-ap="ap1">承認して共有</button><button class="btn ghost" data-apr="ap1">見送る</button></div>
+        <p class="meta" style="margin:6px 0 0">提出版では実際には送らず、行動台帳に「共有した」と残すだけです。</p>
+      </div>
+      <div class="card" id="ap2">
+        <div class="inline" style="justify-content:space-between"><span class="chip c-wait">設定変更の承認</span><span class="meta">エージェントからの提案</span></div>
+        <h3 style="margin-top:8px;color:var(--ink);font-size:15px">デイの日の着替えの声かけを 8:35 → 8:30 に早める</h3>
+        <p style="font-size:14px;margin:0 0 6px">ここ 3 回のデイの日（9/29・10/2・10/6）は、8:35 の声かけに「まだ」とお返事があり、8:45 に「着替えたよ」でした。お迎えの 9:00 まで余裕を持たせる案です。</p>
+        <div class="btns"><button class="btn" data-ap="ap2">承認する</button><button class="btn ghost" data-apr="ap2">見送る</button></div>
+      </div>
+      <div class="card span">
+        <h3>決まったもの</h3>
+        <ul class="rows">
+          <li><span class="t">10/2</span><span class="q">かかりつけ医への共有（1 週間分）</span><span class="chip c-no">見送り</span></li>
+          <li><span class="t">10/1</span><span class="q">静かな時間を 21:30〜7:30 にする</span><span class="chip c-done">承認</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 台帳 ===== -->
+  <section class="pane" id="p-ledger">
+    <div class="card" style="margin-bottom:12px">
+      <h3>10月8日（木）にエージェントがしたこと</h3>
+      <div class="counts">
+        <div><b>9</b><span>声かけ</span></div>
+        <div><b>3</b><span>聞き直し</span></div>
+        <div><b>2</b><span>お知らせ</span></div>
+        <div><b>0</b><span>外への共有</span></div>
+        <div><b style="color:var(--red)">1</b><span>止めたこと</span></div>
+      </div>
+      <div class="filters" id="filters"><button class="on" data-f="all">すべて</button><button data-f="prompt">声かけ</button><button data-f="notice">お知らせ</button><button data-f="block">止めたこと</button><button data-f="ops">運用</button></div>
+    </div>
+    <div class="card">
+      <ul class="rows" id="ledgerRows">
+        <li data-k="prompt"><span class="t">8:00</span><span class="q"><span class="who w-agent">エージェント</span> 起床の声かけ</span><span class="ev">prompt_sent</span></li>
+        <li data-k="prompt"><span class="t">9:00</span><span class="q"><span class="who w-agent">エージェント</span> 着替えの声かけ →「まだ」。10:00 のデイに合わせ 9:15 に聞き直しを予約</span><span class="ev">recheck_scheduled</span></li>
+        <li data-k="notice"><span class="t">9:15</span><span class="q"><span class="who w-agent">エージェント</span>「着替えたよ」を記録し、長男へお知らせ（準備完了）</span><span class="ev">notice_sent</span></li>
+        <li data-k="notice"><span class="t">11:32</span><span class="q"><span class="who w-agent">エージェント</span>「ちょっと腰が痛いの」→ 長男へ確認のお願い（LINE）。根拠の言葉を添えた</span><span class="ev">notice_sent</span><button class="link sub" data-turn="back">会話 ›</button></li>
+        <li data-k="notice"><span class="t">11:41</span><span class="q"><span class="who w-fam">長男</span>「確認した」を押した。段階上げを止めた</span><span class="ev">notice_acked</span></li>
+        <li data-k="block"><span class="t">13:05</span><span class="q"><span class="who w-agent">エージェント</span> 医師への共有を頼まれたが、ご家族の承認が無いので止めた</span><span class="ev">tool_blocked</span></li>
+        <li data-k="prompt"><span class="t">13:40</span><span class="q"><span class="who w-agent">エージェント</span> 水分の声かけにお返事なし。居間で物音あり → 心配な状態とは扱わず 15:00 にもう一度</span><span class="ev">recheck_scheduled</span></li>
+        <li data-k="prompt"><span class="t">15:30</span><span class="q"><span class="who w-agent">エージェント</span> テレビの音だけ。お母さまの声か分からないので判定しない</span><span class="ev">turn_classified</span></li>
+        <li data-k="ops"><span class="t">16:10</span><span class="q"><span class="who w-ops">運用</span> 音声合成が時間切れ → 再試行で戻った。Slack に報告</span><span class="ev">health_recovered</span></li>
+        <li data-k="notice"><span class="t">18:00</span><span class="q"><span class="who w-agent">エージェント</span> 今日の様子を長男へ送信</span><span class="ev">summary_sent</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===== 設定 ===== -->
+  <section class="pane" id="p-settings">
+    <div class="grid two">
+      <div class="card span">
+        <h3>居場所（お母さまに「どこに行ったの」と聞かれたときの答え）<span class="apitag">API 未定義</span></h3>
+        <label class="f">いま、どこにいますか</label>
+        <div class="pills" id="wherePills"><button class="on" data-w="お仕事に行っています">仕事</button><button data-w="お買い物に行っています">買い物</button><button data-w="病院に行っています">病院</button><button data-w="となりの部屋にいます">家の中</button><button data-w="">その他</button></div>
+        <div class="inline" style="margin-top:8px"><label class="f" style="margin:0">帰る時刻</label><input class="tx" type="time" id="backAt" value="18:00"><span class="meta">（家の中なら空のまま）</span></div>
+        <div class="preview" id="wherePreview"></div>
+        <p class="meta" style="margin:6px 0 0">何度聞かれても、この文を同じ言い方でお答えします。帰る時刻を過ぎたら「もうすぐ帰ってきます」に変えます。</p>
+        <div class="btns" style="margin-top:8px"><button class="btn">この内容で登録</button><button class="btn ghost">帰ってきた（消す）</button></div>
+      </div>
+
+      <div class="card">
+        <h3>iPad のモード <span class="apitag">API 未定義</span></h3>
+        <div class="seg" id="modeSeg"><button class="on" data-m="bed">寝室</button><button data-m="bath">お風呂</button></div>
+        <p class="meta" style="margin:8px 0 0" id="modeNote">寝室: 一日の声かけ計画を進めます。</p>
+      </div>
+
+      <div class="card">
+        <h3>呼び方と言葉</h3>
+        <label class="f">お母さまの呼び方</label><input class="tx" value="お母さん">
+        <label class="f">ご家族の呼ばれ方（居場所の答えに使う）</label><input class="tx" value="○○さん">
+        <div class="grid two" style="gap:8px">
+          <div><label class="f">おむつの呼び方</label><input class="tx" value="おむつ"></div>
+          <div><label class="f">お薬</label><input class="tx" value="脳の薬"></div>
+          <div class="span"><label class="f">お薬の置き場所</label><input class="tx" value="黒い机の上"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>時間</h3>
+        <div class="inline"><label class="f" style="margin:0;min-width:11em">聞き直すまで</label><input class="tx" type="number" value="15" style="width:70px"> 分</div>
+        <div class="inline" style="margin-top:6px"><label class="f" style="margin:0;min-width:11em">静かな時間</label><input class="tx" type="time" value="21:30"> 〜 <input class="tx" type="time" value="07:30"></div>
+        <div class="inline" style="margin-top:6px"><label class="f" style="margin:0;min-width:11em">お風呂で返事が無いとき</label><input class="tx" type="number" value="5" style="width:70px"> 分でお知らせ</div>
+        <p class="meta" style="margin:6px 0 0">静かな時間のお知らせは翌朝にまとめます（「痛い」「転んだ」などは除く）。</p>
+      </div>
+
+      <div class="card">
+        <h3>お知らせの順番</h3>
+        <ul class="rows order">
+          <li><span class="n">1</span><span class="q">長男 ・ LINE（登録済み）<br><span class="meta">「確認した」を 10 分待つ</span></span><span class="arrows"><button>▲</button><button>▼</button></span></li>
+          <li><span class="n">2</span><span class="q">長男 ・ メール<br><span class="meta">1 で確認が無いとき</span></span><span class="arrows"><button>▲</button><button>▼</button></span></li>
+        </ul>
+        <button class="btn ghost" style="margin-top:6px">＋ 通知先を足す</button>
+      </div>
+      <div class="span btns"><button class="btn">保存する</button><span class="meta" style="align-self:center">保存した変更は行動台帳に残ります。</span></div>
+    </div>
+  </section>
+
+  <!-- ===== できること ===== -->
+  <section class="pane" id="p-caps">
+    <div class="card">
+      <h3 style="color:var(--ink);font-size:16px">このエージェントができること・できないこと</h3>
+      <p class="meta" style="margin:0 0 6px">判断に迷うことは決めつけず、ご家族に「確認してほしい」とお返しします。</p>
+      <div class="lv"><h4><span class="chip c-done">自動で行う</span></h4><p>ご家族の操作なしで行います。行ったことはすべて行動台帳に残ります。</p>
+        <ul><li>決まった時刻の声かけ（着替え、歯磨き、昼食、服薬など）</li><li>返事がないときや「まだ」のときの再確認（同じ項目は 1 回まで）</li><li>夕方の「今日の様子」のお届け（引用付き）</li><li>ご家族への注意のお知らせ（静かな時間帯は翌朝にまとめます）</li></ul></div>
+      <div class="lv"><h4><span class="chip c-wait">自動で行い、根拠を添える</span></h4><p>すぐにお知らせし、きっかけになった言葉や状態を添えます。「確認した」が押されなければ次のご家族へ順にお知らせします。</p>
+        <ul><li>「痛い」「転んだ」などの言葉があったとき</li><li>声かけへの返事が続けてないとき</li><li>端末（iPad）が応答しなくなったとき</li></ul></div>
+      <div class="lv"><h4><span class="chip c-unc">ご家族の承認後に行う</span></h4><p>ご家族が内容を確認して「承認」したときだけ行います。一文だけ直して承認することもできます。</p>
+        <ul><li>医師・ケアマネジャーへの様子の共有</li><li>声かけ計画や通知先などの設定の変更</li><li>朝の声かけ計画の確定</li></ul></div>
+      <div class="lv"><h4><span class="chip c-red">行わない</span></h4><p>頼まれても行いません。代わりにご家族へ「こう頼まれました」とお伝えします。</p>
+        <ul><li>病気の診断や薬の量の判断</li><li>ご本人に頼まれた外部への電話・連絡</li><li>カメラでの撮影、会話の録音の保存</li></ul></div>
+      <div class="lv"><h4>お風呂モードについて</h4><p>体を洗うことと歯磨きを促すだけです。安全の確認はしません。転んだことなどは分かりません。</p></div>
+      <div class="lv"><h4>記録の扱い</h4><ul><li>音声は保存しません。文字にした短い抜粋だけを残し、7 日で削除します。</li><li>テレビや来訪者の声など、ご本人の言葉か分からないものは「判定できない」として扱います。</li><li>カメラは使いません。</li></ul></div>
+      <div class="lv"><h4>今すぐ止める</h4><p>「今すぐ止める」を押すと、声かけとお知らせをすべて止めます。ご本人には「少し休みますね」とだけお伝えします。</p></div>
+    </div>
+  </section>
+  </div>
+
+  <!-- 下から出る紙: 会話の詳細 -->
+  <div class="sheet-bg" id="turnBg"><div class="sheet" id="turnSheet"></div></div>
+  <!-- 下から出る紙: 今すぐ止める -->
+  <div class="sheet-bg" id="stopBg"><div class="sheet">
+    <h3>今すぐ止めますか？</h3>
+    <p style="font-size:14.5px;margin:0 0 6px">声かけとお知らせを<b>すべて</b>止めます。お母さまには「少し休みますね」とだけお伝えします。</p>
+    <p class="meta" style="margin:0 0 12px">止めている間は、「痛い」などの言葉があってもお知らせしません。再開はこの画面か iPad の「再開する」から。</p>
+    <div class="btns"><button class="btn danger" id="stopYes">止める</button><button class="btn ghost" id="stopNo">やめておく</button></div>
+  </div></div>
+</div>
+</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+// 表示幅
+$$('.widthsw button').forEach(b => b.onclick = () => {
+  $$('.widthsw button').forEach(x => x.classList.toggle('on', x === b));
+  $('#device').classList.toggle('pc', b.dataset.w === 'pc');
+});
+// タブ
+function tab(p) {
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  $$('.pane').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
+  $('.body').scrollTop = 0;
+}
+$$('#tabs button').forEach(b => b.onclick = () => tab(b.dataset.p));
+
+// 会話の詳細（GET /api/family/turn/:turnId の中身の見せ方）
+const TURNS = {
+  dress: { h: '9:15 着替え（聞き直し 1 回目）', ai: 'そろそろお着替えどう？', me: '着替えたよ', st: '<span class="chip c-done">できたと返答</span>', by: 'Gemini（確かさ 0.92）', next: '着替え済みとして記録。長男へ「準備完了」のお知らせ', say: 'お着替え、済んだのですね。' },
+  lunch: { h: '12:10 昼食', ai: 'お昼ご飯は食べましたか？何を食べましたか？', me: '食べたよ', st: '<span class="chip c-done">できたと返答</span>', by: '規則（「食べた」）', next: '記録のみ', say: 'よかったです。' },
+  water: { h: '15:00 水分', ai: 'お茶を一杯どうですか？', me: 'はい、飲んだ', st: '<span class="chip c-done">お返事あり</span>', by: '規則（「飲んだ」）', next: '記録のみ', say: 'おいしいですね。' },
+  back: { h: '11:32 声かけの合間', ai: '（お母さまから話しかけ）', me: 'ちょっと腰が痛いの', st: '<span class="chip c-wait">確認のお願い</span>', by: '規則（「痛い」）＋ Gemini', next: '長男へ LINE（根拠の言葉つき）。医療の判断はしない。15:00 に聞き直す', say: '無理しないで、座って休みましょうか。', extra: '<div class="meta" style="margin-top:8px">15:00 の聞き直し</div><div class="ai"><small>AI</small>腰はどうですか？</div><div class="me"><small>お母さま</small>「もう大丈夫」</div>' },
+  tv: { h: '15:30 お茶', ai: 'お茶を一杯どうですか？', me: '（テレビの音）「続いては全国の天気です」', st: '<span class="chip c-unc">判断できない</span>', by: 'Gemini（ご本人の声か分からない）', next: '何も決めつけない。少し置いてもう一度', say: '' },
+  consent: { h: '10/7 19:00 共有の前の確認', ai: '明日、ケアマネさんに最近の様子をお伝えしてもいいですか？', me: 'いいよ', st: '<span class="chip c-done">同意のお返事</span>', by: 'Gemini（確かさ 0.88）', next: '承認待ちの共有に、このお返事を添える', say: 'ありがとうございます。' },
+};
+function openTurn(k) {
+  const t = TURNS[k];
+  $('#turnSheet').innerHTML = `<h3>${t.h}</h3>
+    <div class="conv"><div class="ai"><small>AI</small>${t.ai}</div><div class="me"><small>お母さま</small>「${t.me}」</div>${t.say ? `<div class="ai"><small>AI</small>${t.say}</div>` : ''}${t.extra || ''}</div>
+    <dl class="kv"><dt>判定</dt><dd>${t.st}</dd><dt>決めたもの</dt><dd>${t.by}</dd><dt>次の行動</dt><dd>${t.next}</dd></dl>
+    <p class="meta">この会話の文字は 10月15日に削除されます（7 日）。音声は残していません。</p>
+    <div class="btns"><button class="btn ghost" onclick="document.getElementById('turnBg').classList.remove('on')">閉じる</button></div>`;
+  $('#turnBg').classList.add('on');
+}
+document.addEventListener('click', e => { const k = e.target.closest('[data-turn]'); if (k) openTurn(k.dataset.turn); });
+$('#turnBg').onclick = e => { if (e.target.id === 'turnBg') e.target.classList.remove('on'); };
+
+// お知らせ: 確認した／誤報だった
+function setFalse(id) {
+  $('#' + id + 'btns').innerHTML = '<span class="chip c-no" style="align-self:center">誤報として記録しました（18:07 長男）</span>';
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-false]'); if (b) setFalse(b.dataset.false); });
+$('#demoWaiting').onclick = () => {
+  $('#n1btns').innerHTML = '<span class="meta" style="width:100%">まだ確認されていません。11:42 に次の通知先（メール）へ送ります。</span><button class="btn" id="ackBtn">確認した</button><button class="btn ghost" data-false="n1">誤報だった</button>';
+  $('#ackBtn').onclick = () => { $('#n1btns').innerHTML = '<span class="chip c-done" style="align-self:center">確認済み 11:41 長男</span><button class="btn ghost" data-false="n1">誤報だった</button>'; };
+};
+
+// 計画の承認
+$('#approvePlan').onclick = () => { $('#planState').className = 'chip c-done'; $('#planState').textContent = '承認済み 21:10'; $('#approvePlan').disabled = true; };
+$$('.sw').forEach(s => s.onclick = () => s.classList.toggle('off'));
+// 承認待ち
+let pending = 2;
+function decide(id, ok) {
+  const c = $('#' + id);
+  c.querySelectorAll('.btns').forEach(b => b.innerHTML = ok ? '<span class="chip c-done">承認しました（台帳に記録）</span>' : '<span class="chip c-no">見送りました</span>');
+  pending--; const bd = $('#tabs .badge'); if (pending > 0) bd.textContent = pending; else bd.remove();
+}
+document.addEventListener('click', e => { const a = e.target.closest('[data-ap]'); if (a) decide(a.dataset.ap, true); const r = e.target.closest('[data-apr]'); if (r) decide(r.dataset.apr, false); });
+// 台帳の絞り込み
+$$('#filters button').forEach(b => b.onclick = () => {
+  $$('#filters button').forEach(x => x.classList.toggle('on', x === b));
+  $$('#ledgerRows li').forEach(li => li.style.display = (b.dataset.f === 'all' || li.dataset.k === b.dataset.f) ? '' : 'none');
+});
+// 居場所
+function whereText() {
+  const on = $('#wherePills .on');
+  const w = on.dataset.w || '（ご自分で書いた文）';
+  const t = $('#backAt').value;
+  const hh = t ? parseInt(t.split(':')[0], 10) + '時' + (t.endsWith(':00') ? '' : parseInt(t.split(':')[1], 10) + '分') + 'ごろ帰ります。' : '';
+  $('#wherePreview').innerHTML = '<small>iPad が読み上げる文</small>○○さんは、' + w + '。' + hh;
+}
+$$('#wherePills button').forEach(b => b.onclick = () => { $$('#wherePills button').forEach(x => x.classList.toggle('on', x === b)); whereText(); });
+$('#backAt').oninput = whereText; whereText();
+// モード
+$$('#modeSeg button').forEach(b => b.onclick = () => {
+  $$('#modeSeg button').forEach(x => x.classList.toggle('on', x === b));
+  const bath = b.dataset.m === 'bath';
+  $('#modeNote').textContent = bath ? 'お風呂: 体を洗うことと歯磨きを促します。安全の確認はしません（転んだことなどは分かりません）。お返事が 5 分無ければお知らせします。' : '寝室: 一日の声かけ計画を進めます。';
+  $('#runState').textContent = '● 動いています ・ ' + (bath ? 'お風呂モード' : '寝室モード');
+});
+// 今すぐ止める
+$('#stopBtn').onclick = () => { if ($('#stopBtn').classList.contains('resume')) return resume(); $('#stopBg').classList.add('on'); };
+$('#stopNo').onclick = () => $('#stopBg').classList.remove('on');
+$('#stopYes').onclick = () => {
+  $('#stopBg').classList.remove('on'); $('#pausebar').style.display = 'flex';
+  $('#runState').textContent = '● 止めています'; $('#runState').classList.add('off');
+  $('#stopBtn').textContent = '再開する'; $('#stopBtn').classList.add('resume');
+};
+function resume() {
+  $('#pausebar').style.display = 'none'; $('#runState').textContent = '● 動いています ・ 寝室モード'; $('#runState').classList.remove('off');
+  $('#stopBtn').textContent = '今すぐ止める'; $('#stopBtn').classList.remove('resume');
+}
+$('#resumeBtn').onclick = resume;
+// #plan などで最初のタブを選ぶ
+const first = location.hash.slice(1); if (first && $('#p-' + first)) tab(first);
+if (location.search.includes('pc')) $$('.widthsw button')[1].click();
+</script>
+</body>
+</html>
