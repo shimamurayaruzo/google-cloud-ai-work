@@ -12,6 +12,7 @@ import { handleBathReturn, modeOf } from '../state/mode.js';
 import { logEvent } from '../log.js';
 import type { Prompt } from '../types.js';
 import { requireInternal } from './auth.js';
+import { scenarioFromBody } from './replay.js';
 import { HttpError, ok, type Router } from './router.js';
 import { bodyOf, requireString, str, toDateKey, toHousehold, toTaskKey } from './util.js';
 
@@ -97,4 +98,24 @@ export function registerInternalRoutes(router: Router, ctx: AppContext): void {
     const report = await runHealthCheck(ctx, hh, now);
     ok(res, { ok: true, hh, expired, report });
   });
+
+  // デモ動画の録画用（DEMO_MODE=true のときだけ。本番では登録しないので 404）。
+  // 台本（eval/scenarios の名前か台本そのもの）を、再生モードと違って本物の ctx（STORE=memory の Store）に流し、
+  // 家族画面から見える記録・通知・要約を作る。通知は本物の familyNotify が走る（LINE 等が未設定なら送られない）。
+  // body: { name | scenario, hh?, date?（台本の日付を差し替える）, withSummary?（既定 true） }
+  if (process.env.DEMO_MODE === 'true') {
+    router.post('/internal/replay-into-store', async (req: Request, res: Response) => {
+      await requireInternal(req);
+      const body = bodyOf(req);
+      const hh = toHousehold(body.hh);
+      const base = await scenarioFromBody(body);
+      const date = str(body.date);
+      if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'date は YYYY-MM-DD で書いてください');
+      const scenario = date ? { ...base, date } : base;
+      const { runScenario } = await import('../state/replay.js');
+      const result = await runScenario(ctx, hh, scenario, { withSummary: body.withSummary !== false });
+      logEvent('internal_replay_into_store', { hh, date: scenario.date, steps: result.steps.length, pass: result.passCount, fail: result.failCount });
+      ok(res, { ok: true, hh, ...result });
+    });
+  }
 }
