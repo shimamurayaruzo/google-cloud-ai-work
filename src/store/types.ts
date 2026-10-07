@@ -19,7 +19,7 @@ export interface Store {
   putDay(day: Day): Promise<void>;
   /** tasks[task] を差し替える。日がなければ作らない（先に putDay） */
   setTask(hh: HouseholdId, date: DateKey, task: TaskKey, record: TaskRecord): Promise<void>;
-  updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice'>>): Promise<void>;
+  updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice' | 'l4'>>): Promise<void>;
   /** 直近 N 日（date を含まない、過去向き）。変化評価に使う */
   listRecentDays(hh: HouseholdId, beforeDate: DateKey, count: number): Promise<Day[]>;
 

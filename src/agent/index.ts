@@ -7,7 +7,10 @@ import { AdkTurnRunner } from './adk.js';
 import { RulesTurnRunner } from './rules.js';
 
 export { AdkTurnRunner, decidePermission } from './adk.js';
-export { RulesTurnRunner, postProcess, detectUrgent, analyzeReply, recheckMinutesFor, URGENT_KEYWORDS } from './rules.js';
+export {
+  RulesTurnRunner, postProcess, detectUrgent, detectL4, detectPain, detectMildDiscomfort, analyzeReply, recheckMinutesFor,
+  URGENT_KEYWORDS, L4_WORDS, L4_SAY, REASSURANCE_SAY,
+} from './rules.js';
 export { buildInstruction, buildUserMessage } from './prompt.js';
 export { createTools } from './tools.js';
 

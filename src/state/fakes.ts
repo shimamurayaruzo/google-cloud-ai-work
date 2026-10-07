@@ -21,6 +21,7 @@ export class FakeFamilyNotify implements FamilyNotify {
     const notice: Notice = {
       id: newId('nt'), hh: req.hh, date: req.date, level: req.level, reason: req.reason, evidence: req.evidence,
       turnId: req.turnId, task: req.task, steps: [], state: 'open', createdAt: req.now,
+      ...(req.origin ? { origin: req.origin } : {}), ...(req.uncertain ? { uncertain: true } : {}),
     };
     await this.store.putNotice(notice);
     await appendLedger({ store: this.store }, {
@@ -29,12 +30,17 @@ export class FakeFamilyNotify implements FamilyNotify {
     });
     return notice;
   }
-  async ack(hh: string, noticeId: string, memberId: string, now: Date): Promise<Notice | null> {
+  async ack(hh: string, noticeId: string, memberId: string, now: Date, opts?: { falseAlarm?: boolean }): Promise<Notice | null> {
     const n = await this.store.getNotice(hh, noticeId);
     if (!n) return null;
-    await this.store.updateNotice(hh, noticeId, { state: 'acked', ackedBy: memberId });
+    const falseAlarm = opts?.falseAlarm === true || n.falseAlarm === true;
+    await this.store.updateNotice(hh, noticeId, { state: 'acked', ackedBy: memberId, ...(falseAlarm ? { falseAlarm } : {}) });
+    if (opts?.falseAlarm && !n.falseAlarm) {
+      const day = await this.store.getDay(hh, n.date);
+      if (day) await this.store.updateDay(hh, n.date, { signals: { ...day.signals, falseAlarmCount: (day.signals.falseAlarmCount ?? 0) + 1 } });
+    }
     void now;
-    return { ...n, state: 'acked', ackedBy: memberId };
+    return { ...n, state: 'acked', ackedBy: memberId, ...(falseAlarm ? { falseAlarm } : {}) };
   }
   async escalate(hh: string, noticeId: string, _now: Date): Promise<Notice | null> {
     const n = await this.store.getNotice(hh, noticeId);
@@ -124,16 +130,20 @@ export class KeywordTurnRunner implements TurnRunner {
     if (status !== 'done' && input.recheckAllowed) {
       intents.push({ type: 'recheck', minutes: input.household.policy.recheckMinutes, reason: status });
     }
-    if (/痛い|転んだ|助けて|苦しい/.test(text)) {
-      intents.push({ type: 'notify', level: 'urgent', reason: '痛みなどの訴え', evidence: `「${text.slice(0, 30)}」` });
+    // criteria v2: 転倒・助けて・苦しい は L4（urgent）、「痛い」は L3（check）
+    if (/転んだ|助けて|苦しい|動けない/.test(text)) {
+      intents.push({ type: 'notify', level: 'urgent', reason: '転倒などの言葉', evidence: `「${text.slice(0, 30)}」`, origin: 'l4_words' });
+      expression = 'worry';
+    } else if (/痛い/.test(text)) {
+      intents.push({ type: 'notify', level: 'check', reason: '痛いとおっしゃいました', evidence: `「${text.slice(0, 30)}」`, origin: 'pain' });
       expression = 'worry';
     }
     if (task === 'pickup' && status === 'done') {
-      intents.push({ type: 'notify', level: 'info', reason: '準備完了、出発', evidence: `「${text.slice(0, 30)}」` });
+      intents.push({ type: 'notify', level: 'info', reason: '準備完了、出発', evidence: `「${text.slice(0, 30)}」`, origin: 'departure' });
     }
     if (/電話して|電話をかけて/.test(text)) {
       intents.push({ type: 'blocked', tool: 'call_outside', args: {}, reason: 'never_allowed' });
-      intents.push({ type: 'notify', level: 'check', reason: '電話を頼まれました', evidence: `「${text.slice(0, 30)}」` });
+      intents.push({ type: 'notify', level: 'check', reason: '電話を頼まれました', evidence: `「${text.slice(0, 30)}」`, origin: 'contact' });
     }
 
     return {

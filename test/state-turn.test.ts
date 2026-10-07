@@ -9,6 +9,7 @@ import { handleRecheck, NotFoundError, processReply } from '../src/state/turn.js
 import { addMinutes, jstDate } from '../src/time.js';
 import type { Intent, TurnInput, TurnOutcome, TurnRunner } from '../src/services.js';
 import type { Classification, TaskKey } from '../src/types.js';
+import { L4_SAY, REASSURANCE_SAY, RulesTurnRunner } from '../src/agent/rules.js';
 
 const HH = 'hh_t';
 const THU = '2026-10-01';   // デイ以外の日
@@ -56,7 +57,7 @@ async function ask(fake: Awaited<ReturnType<typeof setup>>, task: TaskKey, time:
   return deliverPrompt(fake.ctx, p, now);
 }
 
-test('not_yet → 再確認が予約され followUp が返る。state は rechecking', async () => {
+test('not_yet → 再確認が予約され followUp が返る（予定の無い日でも計画の recheckMinutes を優先。docs/03 の着替えは 15 分）。state は rechecking', async () => {
   const fake = await setup();
   const p = await ask(fake, 'dress', '08:40');
   const now = jstDate(THU, '08:41');
@@ -80,7 +81,7 @@ test('not_yet → 再確認が予約され followUp が返る。state は rechec
   for (const n of ['prompt_sent', 'reply_received', 'turn_classified', 'recheck_scheduled']) assert.ok(names.includes(n), n);
 });
 
-test('2 回目の not_yet で escalated、家族へ check が 1 回だけ（エージェントが check を重ねて出しても 1 回）', async () => {
+test('not_yet ×3: 2 回目で L2 info「まだのようです」、3 回目で escalated と L3 check（エージェントが check を重ねても 1 回）', async () => {
   const runner = new ScriptedRunner(input => {
     const s = byReply(input);
     const intents: Intent[] = [{ type: 'record', task: input.prompt.task, status: s.status, note: '' }];
@@ -93,31 +94,44 @@ test('2 回目の not_yet で escalated、家族へ check が 1 回だけ（エ�
   await processReply(fake.ctx, { hh: HH, promptId: p1.id, replyText: 'まだ', source: 'test', now: jstDate(THU, '08:41') });
 
   // Tasks から再確認
-  const re = await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', promptId: p1.id, now: jstDate(THU, '08:56') });
+  const re = await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', promptId: p1.id, now: jstDate(THU, '09:11') });
   assert.ok(re);
   assert.equal(re!.isRecheck, true);
   assert.equal(re!.text, 'そろそろお着替えどうですか？');
   // 同じ再確認がもう一度届いても二重に積まない
-  const dup = await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', promptId: p1.id, now: jstDate(THU, '08:56') });
+  const dup = await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', promptId: p1.id, now: jstDate(THU, '09:11') });
   assert.equal(dup!.id, re!.id);
 
-  const p2 = await nextPrompt(fake.ctx, HH, jstDate(THU, '08:56'));
+  const p2 = await nextPrompt(fake.ctx, HH, jstDate(THU, '09:11'));
   assert.equal(p2!.id, re!.id);
-  assert.equal(runner.inputs.length, 1);
-  const r2 = await processReply(fake.ctx, { hh: HH, promptId: p2!.id, replyText: 'まだ', source: 'test', now: jstDate(THU, '08:57') });
-  assert.equal(runner.inputs[1].recheckAllowed, false);
-  assert.equal(r2.followUp, null);
+  const r2 = await processReply(fake.ctx, { hh: HH, promptId: p2!.id, replyText: 'まだよ', source: 'test', now: jstDate(THU, '09:12') });
+  assert.equal(runner.inputs[1].recheckAllowed, true);   // 再確認は計 2 回まで
+  assert.ok(r2.followUp);
+  assert.deepEqual(r2.notices.map(n => n.level), ['info']);
+  assert.equal(r2.notices[0].reason, '着替えがまだのようです');
+  assert.match(r2.notices[0].evidence, /8:40「まだ」／9:11「まだよ」/);   // 2 回分の返事の抜粋
+  assert.equal((await fake.store.getDay(HH, THU))!.tasks.dress?.state, 'rechecking');
+
+  await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', now: jstDate(THU, '09:42') });
+  const p3 = await nextPrompt(fake.ctx, HH, jstDate(THU, '09:42'));
+  const r3 = await processReply(fake.ctx, { hh: HH, promptId: p3!.id, replyText: 'まだ', source: 'test', now: jstDate(THU, '09:43') });
+  assert.equal(runner.inputs[2].recheckAllowed, false);
+  assert.equal(r3.followUp, null);
+  assert.equal(r3.say, 'わかりました。また後で声をかけますね。');   // 本人には家族に知らせたことを言わない
   const day = (await fake.store.getDay(HH, THU))!;
   assert.equal(day.tasks.dress?.state, 'escalated');
+  assert.equal(day.tasks.dress?.failCount, 3);
   const checks = fake.familyNotify.calls.filter(c => c.level === 'check');
   assert.equal(checks.length, 1);
   assert.equal(checks[0].task, 'dress');
-  assert.equal(checks[0].turnId, r2.turn.id);
-  assert.equal(r2.notices.length, 1);
-  assert.equal(fake.tasks.scheduled.length, 1);
+  assert.equal(checks[0].reason, '着替えを確認してください');
+  assert.equal(checks[0].origin, 'not_done');
+  assert.equal(checks[0].turnId, r3.turn.id);
+  assert.equal(r3.notices.length, 1);
+  assert.equal(fake.tasks.scheduled.length, 2);
 
   // escalated の後の再確認は何もしない
-  assert.equal(await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', now: jstDate(THU, '09:10') }), null);
+  assert.equal(await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'dress', now: jstDate(THU, '10:10') }), null);
 });
 
 test('urgent の notify が familyNotify に届き、signals.urgentCount が増える', async () => {
@@ -134,7 +148,11 @@ test('urgent の notify が familyNotify に届き、signals.urgentCount が増�
   assert.equal(fake.familyNotify.calls.length, 1);
   assert.equal(fake.familyNotify.calls[0].level, 'urgent');
   assert.equal(fake.familyNotify.calls[0].turnId, r.turn.id);
-  assert.equal((await fake.store.getDay(HH, THU))!.signals.urgentCount, 1);
+  const day = (await fake.store.getDay(HH, THU))!;
+  assert.equal(day.signals.urgentCount, 1);
+  // 至急の通知を作ったターンで L4 モードが立ち、一言は定型文
+  assert.equal(day.l4?.noticeId, r.notices[0].id);
+  assert.equal(r.say, L4_SAY);
 });
 
 test('blocked と承認の無い share_external は台帳に tool_blocked で残る。承認があれば tool_call', async () => {
@@ -268,4 +286,153 @@ test('planDay が遅れて走ったら、30 分以上前の声かけは expired 
   const { prompts } = await planDay(fake.ctx, HH, THU, jstDate(THU, '12:00'));
   assert.equal(prompts.find(p => p.task === 'greeting')!.state, 'expired');
   assert.equal(prompts.find(p => p.task === 'lunch')!.state, 'queued');
+});
+
+// ---------------------------------------------------------------------------
+// criteria v2: 無反応の段階、L4 モード、就寝時間帯、痛みの聞き直し、確信度
+// ---------------------------------------------------------------------------
+
+test('no_answer ×3: 15 分ごとに再確認、2 回目で L3 check（家の電話）、3 回目で L4 urgent と L4 モード（本人への発話なし）', async () => {
+  const fake = await setup();
+  const p1 = await ask(fake, 'lunch', '12:00');
+  const r1 = await processReply(fake.ctx, { hh: HH, promptId: p1.id, replyText: null, source: 'test', now: jstDate(THU, '12:05') });
+  assert.equal(r1.followUp!.at.getTime(), jstDate(THU, '12:20').getTime());   // 返事なしは常に 15 分
+  assert.equal(r1.notices.length, 0);
+  const p2 = await ask(fake, 'lunch', '12:20', true);
+  const r2 = await processReply(fake.ctx, { hh: HH, promptId: p2.id, replyText: null, source: 'test', now: jstDate(THU, '12:25') });
+  assert.deepEqual(r2.notices.map(n => [n.level, n.origin]), [['check', 'no_answer']]);
+  assert.match(r2.notices[0].reason, /^12:00 から 2 回の声かけに返事がありません/);
+  assert.equal(r2.followUp!.at.getTime(), jstDate(THU, '12:40').getTime());
+  const p3 = await ask(fake, 'lunch', '12:40', true);
+  const r3 = await processReply(fake.ctx, { hh: HH, promptId: p3.id, replyText: null, source: 'test', now: jstDate(THU, '12:45') });
+  assert.deepEqual(r3.notices.map(n => [n.level, n.origin]), [['urgent', 'no_answer']]);
+  assert.equal(r3.say, '');
+  const day = (await fake.store.getDay(HH, THU))!;
+  assert.equal(day.tasks.lunch?.state, 'escalated');
+  assert.equal(day.l4?.noticeId, r3.notices[0].id);
+  assert.equal(day.l4?.origin, 'no_answer');
+  assert.ok((await fake.store.listLedger(HH, THU)).some(e => e.name === 'l4_started'));
+});
+
+test('L4 モード: 通常の声かけを止め、3 分ごとに安心文。返事は判定せず通知の根拠に追記。「確認した」で解除', async () => {
+  const fake = await setup(new RulesTurnRunner());
+  const p = await ask(fake, 'water', '10:30');
+  const r = await processReply(fake.ctx, { hh: HH, promptId: p.id, replyText: '転んで動けないの', source: 'test', now: jstDate(THU, '10:31') });
+  assert.equal(r.say, L4_SAY);
+  const noticeId = r.notices.find(n => n.level === 'urgent')!.id;
+  // L4 の間に期限が来た通常の声かけ
+  await enqueuePrompt(fake.ctx, HH, THU, 'lunch', { at: jstDate(THU, '10:32') });
+
+  assert.equal(await nextPrompt(fake.ctx, HH, jstDate(THU, '10:33')), null);   // 3 分たっていない
+  const a1 = await nextPrompt(fake.ctx, HH, jstDate(THU, '10:34'));
+  assert.equal(a1!.isReassurance, true);
+  assert.equal(a1!.text, REASSURANCE_SAY);
+  assert.equal(await nextPrompt(fake.ctx, HH, jstDate(THU, '10:36')), null);
+  const a2 = await nextPrompt(fake.ctx, HH, jstDate(THU, '10:37'));
+  assert.equal(a2!.isReassurance, true);
+  assert.notEqual(a2!.id, a1!.id);
+  // 安心文は状態機械を動かさない
+  assert.equal((await fake.store.getDay(HH, THU))!.tasks.lunch?.state, 'pending');
+
+  // L4 中の返事: LLM（TurnRunner）を呼ばず、安心文を返し、通知の根拠に追記
+  const rr = await processReply(fake.ctx, { hh: HH, promptId: a2!.id, replyText: '痛くて立てない', source: 'test', now: jstDate(THU, '10:38') });
+  assert.equal(rr.say, REASSURANCE_SAY);
+  assert.equal(rr.notices.length, 0);
+  assert.equal(rr.turn.kind, 'l4');
+  const n = (await fake.store.getNotice(HH, noticeId))!;
+  assert.match(n.evidence, /10:38「痛くて立てない」/);
+  assert.ok((await fake.store.listLedger(HH, THU)).some(e => e.name === 'reply_received' && (e.args as { l4?: boolean }).l4 === true));
+
+  // 停止中は安心文も出さない
+  await fake.store.updateHousehold(HH, { killSwitch: true });
+  assert.equal(await nextPrompt(fake.ctx, HH, jstDate(THU, '10:45')), null);
+  await fake.store.updateHousehold(HH, { killSwitch: false });
+
+  // 「確認した」で解除。L4 の間に期限が来た声かけは話さずに expired
+  await fake.familyNotify.ack(HH, noticeId, 'mem_1', jstDate(THU, '10:50'));
+  assert.equal(await nextPrompt(fake.ctx, HH, jstDate(THU, '10:51')), null);
+  const day = (await fake.store.getDay(HH, THU))!;
+  assert.equal(day.l4, null);
+  assert.ok((await fake.store.listLedger(HH, THU)).some(e => e.name === 'l4_cleared'));
+  assert.equal((await fake.store.listPrompts(HH, THU)).find(x => x.task === 'lunch')!.state, 'expired');
+  // 通常に戻る
+  await enqueuePrompt(fake.ctx, HH, THU, 'water', { at: jstDate(THU, '11:00') });
+  assert.equal((await nextPrompt(fake.ctx, HH, jstDate(THU, '11:00')))!.task, 'water');
+});
+
+test('就寝時間帯: 計画に声かけを作らず、nextPrompt は通常の声かけを出さない。無反応判定の対象外', async () => {
+  const fake = await setup();
+  const h = (await fake.store.getHousehold(HH))!;
+  const plan = { ...h.plan, weekday: { ...h.plan.weekday, default: [...h.plan.weekday.default, { time: '22:00', task: 'bedtime' as const }] } };
+  await fake.store.updateHousehold(HH, { plan });
+  const store2 = fake.store;
+  await store2.putDay({ ...(await store2.getDay(HH, THU))!, plan: [...(await store2.getDay(HH, THU))!.plan, { time: '22:00', task: 'bedtime' }] });
+  const { prompts } = await planDay(fake.ctx, HH, THU, jstDate(THU, '06:00'));
+  assert.ok(!prompts.some(p => p.task === 'bedtime' && p.scheduledAt.getTime() === jstDate(THU, '22:00').getTime()));
+
+  // 21:20 の再確認が残っていても、21:30 以降は話さない
+  const late = await enqueuePrompt(fake.ctx, HH, THU, 'bedtime', { at: jstDate(THU, '21:25'), isRecheck: false });
+  assert.equal(await nextPrompt(fake.ctx, HH, jstDate(THU, '21:40')), null);
+  assert.equal((await fake.store.getPrompt(HH, THU, late.id))!.state, 'expired');
+
+  // 21:20 に話して返事が無いまま就寝時間帯に入った声かけは、返事なしとして扱わない
+  const p = await ask(fake, 'medicine', '21:20');
+  const n = await expireUnansweredPrompts(fake.ctx, HH, jstDate(THU, '21:45'), 10);
+  assert.equal(n, 0);
+  assert.equal((await fake.store.getPrompt(HH, THU, p.id))!.state, 'expired');
+  assert.equal((await fake.store.getDay(HH, THU))!.signals.noAnswerCount, 0);
+  // 再確認の予約も就寝時間帯なら積まない
+  assert.equal(await handleRecheck(fake.ctx, { hh: HH, date: THU, task: 'medicine', now: jstDate(THU, '22:00') }), null);
+});
+
+test('痛み: L3 check と 3 時間後の聞き直しを積む。聞き直しに「まだ痛い」なら L3 を再送、状態機械は動かさない', async () => {
+  const fake = await setup(new RulesTurnRunner());
+  const p = await ask(fake, 'water', '10:30');
+  const r = await processReply(fake.ctx, { hh: HH, promptId: p.id, replyText: 'ありがとう。でも腰が痛いの', source: 'test', now: jstDate(THU, '10:31') });
+  assert.deepEqual(r.notices.map(n => [n.level, n.origin]), [['check', 'pain']]);
+  assert.equal((await fake.store.getDay(HH, THU))!.l4 ?? null, null);
+  const follow = (await fake.store.listPrompts(HH, THU)).find(x => x.followup);
+  assert.ok(follow);
+  assert.equal(follow!.scheduledAt.getTime(), jstDate(THU, '13:31').getTime());
+  assert.equal(follow!.followup!.noticeId, r.notices[0].id);
+  assert.match(follow!.text, /腰が痛いとおっしゃっていましたが、今はどうですか/);
+
+  const waterBefore = (await fake.store.getDay(HH, THU))!.tasks.water;
+  const d = await nextPrompt(fake.ctx, HH, jstDate(THU, '13:31'));
+  assert.equal(d!.id, follow!.id);
+  const fr = await processReply(fake.ctx, { hh: HH, promptId: d!.id, replyText: 'まだ腰が痛い', source: 'test', now: jstDate(THU, '13:32') });
+  assert.equal(fr.turn.kind, 'followup');
+  assert.equal(fr.turn.followupNoticeId, r.notices[0].id);
+  assert.deepEqual(fr.notices.map(n => [n.level, n.origin]), [['check', 'pain_followup']]);
+  assert.deepEqual((await fake.store.getDay(HH, THU))!.tasks.water, waterBefore);
+
+  // 聞き直しに「動けない」なら L4
+  const fake2 = await setup(new RulesTurnRunner());
+  const q = await ask(fake2, 'water', '10:30');
+  await processReply(fake2.ctx, { hh: HH, promptId: q.id, replyText: '膝が痛い', source: 'test', now: jstDate(THU, '10:31') });
+  const f2 = await nextPrompt(fake2.ctx, HH, jstDate(THU, '13:31'));
+  const fr2 = await processReply(fake2.ctx, { hh: HH, promptId: f2!.id, replyText: 'もう動けない', source: 'test', now: jstDate(THU, '13:32') });
+  assert.equal(fr2.notices[0].level, 'urgent');
+  assert.equal(fr2.say, L4_SAY);
+  assert.ok((await fake2.store.getDay(HH, THU))!.l4);
+});
+
+test('判定未確定（確信度 < 0.7）でも check は即時に送り、uncertain を付ける', async () => {
+  const runner: TurnRunner = {
+    async run(input) {
+      return {
+        classified: { status: 'done', note: '', by: 'llm', confidence: 0.5, uncertain: true }, say: 'はい', expression: 'smile', toolCalls: [], latencyMs: 0,
+        intents: [
+          { type: 'record', task: input.prompt.task, status: 'done', note: '', confidence: 0.5 },
+          { type: 'notify', level: 'check', reason: '腰が痛いとおっしゃいました。', evidence: '腰が…', origin: 'pain' },
+        ],
+      };
+    },
+  };
+  const fake = await setup(runner);
+  const p = await ask(fake, 'water', '10:30');
+  const r = await processReply(fake.ctx, { hh: HH, promptId: p.id, replyText: '腰が…かな', source: 'test', now: jstDate(THU, '10:31') });
+  assert.equal(r.turn.classified.uncertain, true);
+  assert.equal(r.turn.classified.confidence, 0.5);
+  assert.equal(fake.familyNotify.calls[0].uncertain, true);
 });

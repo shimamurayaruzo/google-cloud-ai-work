@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>紙芝居① 母側・寝室モード</title>
+<style>
+:root{--bg:#f4f6f3;--paper:#fff;--ink:#1f2a24;--ink-2:#4a5650;--ink-3:#7a8680;--line:#d9dfda;--accent:#1f6f5b;--accent-soft:#e3efe9;--amber:#a86f14;--amber-soft:#f6ecd6;--red:#b4443c;--red-soft:#f7e3e0;--pen:#c0392b;
+--room:#fbf7ef;--room-2:#f3ecdf;--skin:#ffe6c4;--cheek:#f4b4a2;--eye:#3b3330;
+--font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.7}
+.wrap{max-width:1400px;margin:0 auto;padding:16px 16px 60px}
+.mk-nav{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;color:var(--ink-3);margin-bottom:10px}
+.mk-nav a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+.mk-nav a.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--ink)}
+h1{font-size:22px;margin:0 0 4px}
+.lede{color:var(--ink-2);margin:0 0 14px}
+/* 決めどころ */
+.kime{background:#fffdf8;border:1px solid #ecd9d4;border-left:5px solid var(--pen);padding:12px 16px 6px;margin:0 0 18px}
+.kime h2{font-size:15px;color:var(--pen);margin:0 0 6px;letter-spacing:.04em}
+.kime ol{margin:0;padding-left:1.5em}
+.kime li{margin:0 0 8px}
+.kime b{color:var(--ink)}
+.kime .an{color:var(--ink-2)}
+.kime .aka{display:inline-block;min-width:12em;border-bottom:1px dashed var(--pen);color:var(--pen);font-size:13px;margin-left:6px}
+/* 場面の切替（紙芝居の操作。本番には無い） */
+.scenes{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.scenes button{font:inherit;font-size:13px;padding:6px 10px;border:1px solid var(--line);background:var(--paper);border-radius:6px;cursor:pointer;color:var(--ink-2)}
+.scenes button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:1100px){.stage{grid-template-columns:1fr}}
+.memo{background:var(--paper);border:1px solid var(--line);padding:12px 14px;font-size:14px}
+.memo h3{font-size:13px;color:var(--ink-3);margin:0 0 6px;font-weight:700;letter-spacing:.06em}
+.memo p{margin:0 0 8px}
+.memo code{font-size:12px;background:var(--bg);padding:1px 4px}
+.memo .tag{display:inline-block;font-size:11px;padding:0 6px;border-radius:3px;background:var(--amber-soft);color:var(--amber);font-weight:700}
+
+/* ===== iPad（横 1366×1024） ===== */
+.ipad{width:100%;max-width:1366px;aspect-ratio:1366/1024;border:14px solid #24282a;border-radius:34px;background:var(--room);position:relative;overflow:hidden;container-type:inline-size;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+.scr{position:absolute;inset:0;display:grid;grid-template-columns:40% 60%;grid-template-rows:auto 1fr auto}
+/* 上：時計・日付（本人向けに大きめ） */
+.top{grid-column:1/3;display:flex;justify-content:space-between;align-items:flex-start;padding:2.2cqw 2.6cqw 0}
+.clock{color:#6b5b45;line-height:1.25}
+.clock .d{font-size:2.3cqw;font-weight:700}
+.clock .t{font-size:2.3cqw;color:#8a7a62}
+/* 家族用の小さな操作（目立たせない） */
+.fam{display:flex;gap:.6cqw;align-items:center;opacity:.55;transition:opacity .2s}
+.fam:hover{opacity:1}
+.fam .seg{display:flex;border:1px solid #c9bfae;border-radius:99px;overflow:hidden}
+.fam button{font:inherit;font-size:1.05cqw;padding:.45cqw 1cqw;border:0;background:transparent;color:#6b5b45;cursor:pointer}
+.fam .seg button.on{background:#6b5b45;color:#fff}
+.fam .solo{border:1px solid #c9bfae;border-radius:99px}
+.fam .lbl{font-size:.95cqw;color:#8a7a62;margin-right:.2cqw}
+/* 顔 */
+.facebox{grid-column:1;grid-row:2;display:flex;align-items:center;justify-content:center;position:relative}
+.face{width:34cqw;height:34cqw;transition:transform .3s}
+.face.tilt{transform:rotate(-5deg)}
+/* 字幕 */
+.talk{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:center;padding:0 3.4cqw 0 1cqw;gap:1.6cqw}
+.reply{align-self:flex-start;background:#fff;border:1px solid #e3d8c6;border-radius:2cqw;padding:1cqw 1.8cqw;font-size:2.4cqw;color:#5d5246;position:relative}
+.reply small{display:block;font-size:1.1cqw;color:#a3957f;margin-bottom:.2cqw}
+.say{font-size:3.8cqw;line-height:1.45;font-weight:700;color:#2f2a24;letter-spacing:.02em}
+.say.dim{font-size:3cqw;color:#7d705f;font-weight:400}
+.listen{display:flex;align-items:center;gap:1.2cqw;font-size:2.1cqw;color:#3d7f6c}
+.listen .mic{width:4.6cqw;height:4.6cqw;border-radius:50%;background:#e2f0ea;display:grid;place-items:center;position:relative}
+.listen .mic::after{content:"";position:absolute;inset:-.6cqw;border-radius:50%;border:.35cqw solid #9fd0bf;animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{0%{transform:scale(.85);opacity:1}100%{transform:scale(1.35);opacity:0}}
+.listen svg{width:2.4cqw;height:2.4cqw}
+.big-clock{font-size:9cqw;font-weight:700;color:#4f4536;line-height:1.1}
+.big-day{font-size:4.2cqw;font-weight:700;color:#6b5b45}
+.soft{font-size:2.3cqw;color:#8a7a62}
+/* 下：今日の流れ（薄く）と状態 */
+.bottom{grid-column:1/3;display:flex;justify-content:space-between;align-items:center;padding:0 2.6cqw 1.8cqw;gap:2cqw}
+.flow{display:flex;gap:.8cqw;align-items:center;font-size:1.25cqw;color:#a3957f;flex-wrap:wrap}
+.flow span{display:flex;align-items:center;gap:.35cqw}
+.flow i{width:1cqw;height:1cqw;border-radius:50%;border:.18cqw solid #c9bfae;display:inline-block}
+.flow .done i{background:#9fc7b8;border-color:#9fc7b8}
+.flow .now{color:#5d5246;font-weight:700}
+.flow .now i{border-color:#e0a526;background:#ffe3a3}
+.state{font-size:1.05cqw;color:#a3957f;display:flex;gap:1.4cqw;white-space:nowrap}
+.state .on{color:#3d7f6c}
+/* 停止中の帯 */
+.paused-band{position:absolute;left:0;right:0;top:0;height:.7cqw;background:#c9bfae}
+/* 今日の予定（家族用ドロワー） */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:34cqw;background:#fff;border-left:1px solid #e3d8c6;box-shadow:-6px 0 20px rgba(0,0,0,.08);padding:2.2cqw 2cqw;font-size:1.35cqw;color:#4a4136;overflow:auto}
+.drawer h4{font-size:1.7cqw;margin:0 0 .3cqw}
+.drawer .sub{font-size:1.05cqw;color:#a3957f;margin-bottom:1.2cqw}
+.drawer table{width:100%;border-collapse:collapse}
+.drawer td{padding:.55cqw .3cqw;border-bottom:1px solid #f0e9dd;vertical-align:top}
+.drawer td:first-child{width:5.5cqw;color:#8a7a62;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;font-size:1cqw;padding:0 .6cqw;border-radius:.4cqw;white-space:nowrap}
+.c-done{background:var(--accent-soft);color:var(--accent)}
+.c-wait{background:var(--amber-soft);color:var(--amber)}
+.c-next{background:#eef0f4;color:#5a6278}
+.drawer .close{position:absolute;right:1.6cqw;top:1.6cqw;font:inherit;font-size:1.1cqw;border:1px solid #e3d8c6;background:#fff;border-radius:99px;padding:.2cqw 1cqw;cursor:pointer;color:#8a7a62}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="mk-nav">紙芝居（下書き 2026-10-07）:
+  <a class="on" href="01-device-bedroom.html">① 母側・寝室</a>
+  <a href="02-device-bath.html">② 母側・お風呂</a>
+  <a href="03-family.html">③ 家族の画面</a>
+  <a href="04-judge-entry.html">④ 審査員の入口</a>
+  <a href="README.md">見方（README）</a>
+</nav>
+<h1>① 母側の画面・寝室モード（iPad Pro 12.9 横置き）</h1>
+<p class="lede">お母さんは操作しません。iPad の側から話しかけ、お返事を聞きます。下のボタンで場面を切り替えて見てください（このボタンは紙芝居用で、本番の画面にはありません）。</p>
+
+<section class="kime" aria-label="決めどころ">
+  <h2>決めどころ（赤を入れてください）</h2>
+  <ol>
+    <li><b>顔の絵</b> <span class="an">— 案: いまの簡単な線の絵（SVG）で 4 つの表情（にこにこ・聞いている・考え中・心配）。絵文字にする／馬場さんのイラストにする、も選べます。</span><span class="aka">赤:</span></li>
+    <li><b>家族用の操作の置き場所と出し方</b> <span class="an">— 案: 右上に薄く常時表示（寝室／お風呂・今日の予定・いったん止める）。本人が触らないよう「長押しで出す」にもできます。</span><span class="aka">赤:</span></li>
+    <li><b>居場所を聞かれたときの答え方</b> <span class="an">— 案: 「○○さんは、お仕事に行っています。18時ごろ帰ります。」を何度でも同じ言い方で。家族が設定で登録した文をそのまま読みます。</span><span class="aka">赤:</span></li>
+    <li><b>声かけの合間に、日付・曜日・時刻を大きく出すか</b> <span class="an">— 案: 出す（「今日は何曜日」の質問が多いので、画面を見れば分かるように）。</span><span class="aka">赤:</span></li>
+    <li><b>下の「今日の流れ」を本人に見せるか</b> <span class="an">— 案: 薄く見せる（できたことに印が付く。できていないことは責めない色）。見せない、も可。</span><span class="aka">赤:</span></li>
+  </ol>
+</section>
+
+<div class="scenes" id="scenes"></div>
+
+<div class="stage">
+  <div class="ipad" id="ipad">
+    <div class="paused-band hidden" id="pausedBand"></div>
+    <div class="scr">
+      <div class="top">
+        <div class="clock" id="clockSmall"><div class="d">10月8日（木）</div><div class="t">8:45</div></div>
+        <div class="fam" aria-label="家族用の操作">
+          <span class="lbl">ご家族用</span>
+          <div class="seg"><button class="on" id="modeBed">寝室</button><button id="modeBath" onclick="location.href='02-device-bath.html'">お風呂</button></div>
+          <button class="solo" id="planBtn">今日の予定</button>
+          <button class="solo" id="pauseBtn">いったん止める</button>
+        </div>
+      </div>
+      <div class="facebox"><svg class="face" id="face" viewBox="-12 0 224 200" aria-label="顔"></svg></div>
+      <div class="talk" id="talk"></div>
+      <div class="bottom">
+        <div class="flow" id="flow"></div>
+        <div class="state" id="state"></div>
+      </div>
+    </div>
+    <aside class="drawer hidden" id="drawer">
+      <button class="close" id="drawerClose">閉じる</button>
+      <h4>今日の予定（デイの日）</h4>
+      <div class="sub">ご家族用。お母さんには読み上げません。</div>
+      <table>
+        <tr><td>8:00</td><td>起床の挨拶 <span class="chip c-done">お返事あり</span></td></tr>
+        <tr><td>8:05</td><td>おむつ交換 <span class="chip c-done">替えたとお返事</span></td></tr>
+        <tr><td>8:15</td><td>歯磨き <span class="chip c-done">磨いたとお返事</span></td></tr>
+        <tr><td>8:25</td><td>洗顔 <span class="chip c-done">8:40 に洗ったとお返事</span></td></tr>
+        <tr><td>8:35</td><td>着替え <span class="chip c-wait">「まだ」→ 8:45 にもう一度</span></td></tr>
+        <tr><td>8:50</td><td>持ち物</td></tr>
+        <tr><td>9:00</td><td>お迎え</td></tr>
+        <tr><td>16:00</td><td>おかえりなさい</td></tr>
+        <tr><td>16:30</td><td>お茶</td></tr>
+        <tr><td>18:00</td><td><span class="chip c-next">ご家族へ今日の様子</span></td></tr>
+        <tr><td>19:00</td><td>夕ご飯</td></tr>
+        <tr><td>19:40</td><td>お薬（黒い机の上・2 錠）</td></tr>
+        <tr><td>21:00</td><td>歯磨き・お休み</td></tr>
+      </table>
+    </aside>
+  </div>
+
+  <div class="memo" id="memo">
+    <h3>この場面で起きていること</h3>
+    <div id="memoBody"></div>
+  </div>
+</div>
+</div>
+
+<script>
+// ---- 顔（4 種）。API の expression: smile / listen / think / worry ----
+const SKIN = '<circle cx="100" cy="104" r="88" fill="var(--skin)"/>';
+const CHEEKS = '<circle cx="52" cy="122" r="11" fill="var(--cheek)" opacity=".55"/><circle cx="148" cy="122" r="11" fill="var(--cheek)" opacity=".55"/>';
+const S = 'stroke="var(--eye)" stroke-width="6" stroke-linecap="round" fill="none"';
+const FACES = {
+  smile: SKIN + CHEEKS +
+    `<path d="M58 96 q12 -14 24 0" ${S}/><path d="M118 96 q12 -14 24 0" ${S}/>` +
+    `<path d="M72 128 q28 26 56 0" ${S}/>`,
+  listen: SKIN + CHEEKS +
+    `<circle cx="70" cy="94" r="8" fill="var(--eye)"/><circle cx="130" cy="94" r="8" fill="var(--eye)"/>` +
+    `<path d="M60 74 q10 -6 20 -2" ${S} stroke-width="4"/><path d="M120 72 q10 -4 20 2" ${S} stroke-width="4"/>` +
+    `<path d="M88 132 q12 8 24 0" ${S}/>` +
+    `<path d="M186 86 q8 18 0 36" ${S} stroke="#7fb9a6" stroke-width="5"/><path d="M196 76 q14 28 0 56" ${S} stroke="#a9d3c5" stroke-width="5"/>`,
+  think: SKIN + CHEEKS +
+    `<circle cx="72" cy="94" r="7" fill="var(--eye)"/><circle cx="132" cy="94" r="7" fill="var(--eye)"/>` +
+    `<circle cx="75" cy="91" r="2.4" fill="#fff"/><circle cx="135" cy="91" r="2.4" fill="#fff"/>` +
+    `<path d="M58 70 q12 -10 26 -4" ${S} stroke-width="4"/><path d="M118 76 h24" ${S} stroke-width="4"/>` +
+    `<path d="M82 134 q9 -5 18 0 q9 5 18 0" ${S}/>` +
+    `<circle cx="168" cy="40" r="6" fill="#d8ccb8"/><circle cx="182" cy="24" r="8" fill="#d8ccb8"/>`,
+  worry: SKIN +
+    `<circle cx="72" cy="98" r="7" fill="var(--eye)"/><circle cx="128" cy="98" r="7" fill="var(--eye)"/>` +
+    `<path d="M56 82 L82 72" ${S} stroke-width="4"/><path d="M144 82 L118 72" ${S} stroke-width="4"/>` +
+    `<path d="M78 140 q22 -12 44 0" ${S}/>`,
+};
+function setFace(name) {
+  const f = document.getElementById('face');
+  f.innerHTML = FACES[name];
+  f.classList.toggle('tilt', name === 'listen');
+}
+
+const MIC = '<svg viewBox="0 0 24 24" fill="#3d7f6c"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0" stroke="#3d7f6c" stroke-width="2" fill="none"/><rect x="11" y="17" width="2" height="4"/></svg>';
+const listening = '<div class="listen"><span class="mic">' + MIC + '</span>お返事を聞いています</div>';
+const reply = (t) => `<div class="reply"><small>お母さん</small>「${t}」</div>`;
+
+// ---- 今日の流れ（下の帯） ----
+const FLOW = ['おむつ', '歯磨き', '洗顔', '着替え', '持ち物', 'お迎え', '…', 'お薬', 'お休み'];
+function flow(doneN, nowIdx) {
+  return FLOW.map((n, i) => `<span class="${i < doneN ? 'done' : ''} ${i === nowIdx ? 'now' : ''}"><i></i>${n}</span>`).join('');
+}
+
+// ---- 場面 ----
+const SCENES = [
+  { key: 'idle', name: '1. 合間（時計）', face: 'smile', time: '8:32', flow: [3, -1],
+    talk: '<div class="big-day">10月8日　木曜日</div><div class="big-clock">8:32</div><div class="soft">今日はデイサービスの日です</div>',
+    memo: '<p>声かけと声かけの合間。日付・曜日・時刻を大きく出して、聞かれる前に分かるようにします（決めどころ 4）。</p><p>端末は 60 秒ごとに <code>POST /api/device/heartbeat</code>、5 秒ごとに <code>GET /api/device/next-prompt</code> を呼んで待っています。</p>' },
+  { key: 'ask', name: '2. 声かけ', face: 'smile', time: '8:35', flow: [3, 3],
+    talk: '<div class="say">今日はデイサービスの日です。<br>9時にお迎えが来ます。<br>お着替えは済みましたか？</div>',
+    memo: '<p>声かけ計画の 8:35「着替え」。読み上げと同時に字幕を大きく出します。</p><p><code>next-prompt</code> の <code>text</code> と <code>expression: "smile"</code> をそのまま表示。<code>ttsUrl</code> が無ければ端末の読み上げ（ja-JP）。</p>' },
+  { key: 'listen', name: '3. 聞き取り中', face: 'listen', time: '8:35', flow: [3, 3],
+    talk: '<div class="say dim">お着替えは済みましたか？</div>' + listening,
+    memo: '<p>マイクが開いている間だけ、緑の印を出します（聞いていないときは消える）。</p><p>20 秒待ってもお返事が無ければ <code>noAnswer: true</code> を送ります。音声そのものは送らず、文字にした返事だけ。</p>' },
+  { key: 'confirm', name: '4. 返事の確認', face: 'smile', time: '8:45', flow: [4, 4],
+    talk: reply('着替えたよ') + '<div class="say">着替えたよ、ですね。<br>ありがとうございます。</div>',
+    memo: '<p>お返事を短くくり返してから、ひとこと返します。「よくできましたね」のような採点の言い方はしません。</p><p><code>POST /api/device/reply</code> の返り <code>say</code> と <code>expression</code> を表示。家族へは「準備完了」とだけ届きます（お知らせ）。</p>' },
+  { key: 'notyet', name: '5.「まだ」のとき', face: 'think', time: '8:35', flow: [3, 3],
+    talk: reply('まだ') + '<div class="say">わかりました。<br>少ししたら、また声をかけますね。</div>',
+    memo: '<p>9:00 のお迎えに間に合うよう、10 分後（8:45）にもう一度聞くと決めます。<code>followUp.at</code> が返ります。</p><p>本人に「ご家族に知らせます」とは言いません（監視の構図を避ける）。</p>' },
+  { key: 'where', name: '6. 居場所を聞かれた', face: 'smile', time: '10:20', flow: [6, -1],
+    talk: reply('○○はどこに行ったの？') + '<div class="say">○○さんは、<br>お仕事に行っています。<br>18時ごろ帰ります。</div>',
+    memo: '<p>声かけの時間外でも、居場所の質問にだけは答えます。答えはご家族が「設定 → 居場所」に登録した文で、何度聞かれても同じ言い方です。</p><p><span class="tag">API 未定義</span> 居場所の登録と、時間外の質問を受ける入口は今の API にありません。追加が必要です。</p><p>聞かれた回数は「同じ質問（人）」として家族の画面にだけ出します。</p>' },
+  { key: 'med', name: '7. お薬を聞かれた', face: 'smile', time: '19:40', flow: [7, 7],
+    talk: reply('何の薬？') + '<div class="say">脳の薬ですよ。<br>黒い机の上にありますよ。</div>',
+    memo: '<p>ご家族が決めた言葉（「脳の薬」「黒い机の上」）だけで答え、それ以上は説明しません。設定の <code>person.wording</code> を使います。</p>' },
+  { key: 'pause', name: '8. いったん止めた', face: 'smile', time: '10:42', flow: [6, -1], paused: true,
+    talk: '<div class="say">少し休みますね。</div><div class="soft">また後でお話ししましょう</div>',
+    memo: '<p>ご家族が「いったん止める」か、家族の画面の「今すぐ止める」を押したとき。本人には「少し休みますね」とだけ伝え、声かけとお知らせをすべて止めます。</p><p>上の細い帯と右下の「停止中」で、ご家族にだけ分かるようにします。heartbeat の <code>killSwitch: true</code>。</p>' },
+  { key: 'plan', name: '9. 今日の予定（家族用）', face: 'smile', time: '8:42', flow: [3, 3], drawer: true,
+    talk: '<div class="say dim">お着替えは済みましたか？</div>',
+    memo: '<p>右上の「今日の予定」を押すと、ご家族用の一覧が右から出ます。お母さんには読み上げません。閉じるか 30 秒で自動で閉じる案。</p>' },
+];
+
+const scenesEl = document.getElementById('scenes');
+let cur = 0;
+function show(i) {
+  cur = i;
+  const s = SCENES[i];
+  setFace(s.face);
+  document.getElementById('talk').innerHTML = s.talk;
+  document.getElementById('clockSmall').innerHTML = `<div class="d">10月8日（木）</div><div class="t">${s.time}</div>`;
+  document.getElementById('flow').innerHTML = flow(s.flow[0], s.flow[1]);
+  const isListen = s.face === 'listen';
+  document.getElementById('state').innerHTML =
+    (s.paused ? '<span style="color:#b4443c">● 停止中（ご家族が止めました）</span>' : '<span class="on">● つながっています</span>') +
+    `<span>${isListen ? '<span class="on">マイク: 聞いています</span>' : 'マイク: 聞いていません'}</span>` +
+    '<span>寝室モード</span>';
+  document.getElementById('pausedBand').classList.toggle('hidden', !s.paused);
+  document.getElementById('pauseBtn').textContent = s.paused ? '再開する' : 'いったん止める';
+  document.getElementById('drawer').classList.toggle('hidden', !s.drawer);
+  document.getElementById('memoBody').innerHTML = s.memo;
+  [...scenesEl.children].forEach((b, j) => b.classList.toggle('on', j === i));
+}
+SCENES.forEach((s, i) => {
+  const b = document.createElement('button');
+  b.textContent = s.name; b.onclick = () => show(i);
+  scenesEl.append(b);
+});
+document.getElementById('planBtn').onclick = () => show(SCENES.findIndex(s => s.key === 'plan'));
+document.getElementById('drawerClose').onclick = () => document.getElementById('drawer').classList.add('hidden');
+document.getElementById('pauseBtn').onclick = () => show(SCENES.findIndex(s => s.key === (SCENES[cur].paused ? 'idle' : 'pause')));
+const h = parseInt(location.hash.slice(1), 10); show(h >= 1 && h <= SCENES.length ? h - 1 : 1);
+window.addEventListener("hashchange", () => { const n = parseInt(location.hash.slice(1), 10); if (n >= 1 && n <= SCENES.length) show(n - 1); });
+</script>
+</body>
+</html>

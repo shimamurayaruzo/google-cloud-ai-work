@@ -88,7 +88,16 @@ export const SettingsSchema = z.object({
   policy: z.object({
     recheckOnce: z.boolean().optional(),
     recheckMinutes: z.number().int().min(1).max(180).optional(),
+    /** 1 確認あたりの再確認の上限（criteria 5 節。既定 2 = 計 3 回） */
+    maxRechecks: z.number().int().min(0).max(5).optional(),
     quietHours: z.object({ from: HHMM, to: HHMM }).optional(),
+    /** 就寝時間帯（criteria 3-3 ★8。声かけをしない） */
+    sleepHours: z.object({ from: HHMM, to: HHMM }).optional(),
+  }).optional(),
+  /** 通知文に書く連絡先。空文字で消す */
+  contacts: z.object({
+    homePhone: z.string().max(20).regex(/^[0-9+\-() ]*$/, '電話番号は数字・+・-・括弧で書いてください').optional(),
+    nearby: z.object({ name: z.string().min(1).max(30), phone: z.string().min(1).max(20).regex(/^[0-9+\-() ]+$/, '電話番号は数字・+・-・括弧で書いてください') }).nullable().optional(),
   }).optional(),
   members: z.array(z.object({
     id: z.string().max(64).optional(),
@@ -119,6 +128,18 @@ export function buildSettingsPatch(current: Household, input: z.infer<typeof Set
   }
   if (input.policy) {
     patch.policy = { ...current.policy, ...input.policy };
+  }
+  if (input.contacts) {
+    const next: NonNullable<Household['contacts']> = { ...(current.contacts ?? {}) };
+    if (input.contacts.homePhone !== undefined) {
+      if (input.contacts.homePhone.trim()) next.homePhone = input.contacts.homePhone.trim();
+      else delete next.homePhone;
+    }
+    if (input.contacts.nearby !== undefined) {
+      if (input.contacts.nearby) next.nearby = input.contacts.nearby;
+      else delete next.nearby;
+    }
+    patch.contacts = next;
   }
   if (input.members) {
     const orders = input.members.map(m => m.order);
@@ -165,6 +186,8 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
     ok(res, {
       date,
       day,
+      /** L4 モード（至急の通知のあと、3 分ごとに安心文だけを流している間）。無ければ null */
+      l4: day?.l4 ?? null,
       prompts,
       turns: turns.map(turnPreview),
       notices,
@@ -279,6 +302,7 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
       person: h.person,
       plan: h.plan,
       policy: h.policy,
+      contacts: h.contacts ?? {},
       members: [...h.members].sort((a, b) => a.order - b.order).map(memberPublic),
       killSwitch: h.killSwitch,
       taskKeys: TASK_KEYS,
@@ -307,7 +331,7 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
       ok: true,
       changed: fields,
       settings: {
-        name: h.name, person: h.person, plan: h.plan, policy: h.policy,
+        name: h.name, person: h.person, plan: h.plan, policy: h.policy, contacts: h.contacts ?? {},
         members: [...h.members].sort((a, b) => a.order - b.order).map(memberPublic),
         killSwitch: h.killSwitch,
       },
@@ -335,11 +359,15 @@ export function registerFamilyRoutes(router: Router, ctx: AppContext): void {
     ok(res, CAPABILITIES);
   });
 
-  // ---- 通知の「確認した」（LINE が無い間の代わり） ----
+  // ---- 通知の「確認した」（LINE が無い間の代わり）。body { falseAlarm: true } で「誤報だった」 ----
   router.post('/api/family/notices/:nt/ack', async (req: Request, res: Response, params) => {
     requireFamily(req);
     const hh = hhOf(req);
-    const notice = await ctx.familyNotify.ack(hh, params.nt, APPROVER, ctx.clock());
+    const falseAlarm = bodyOf(req).falseAlarm;
+    if (falseAlarm !== undefined && typeof falseAlarm !== 'boolean') throw new HttpError(400, 'falseAlarm は true か false です');
+    const notice = falseAlarm === true
+      ? await ctx.familyNotify.ack(hh, params.nt, APPROVER, ctx.clock(), { falseAlarm: true })
+      : await ctx.familyNotify.ack(hh, params.nt, APPROVER, ctx.clock());
     if (!notice) throw new HttpError(404, 'この通知は見つかりません');
     ok(res, { ok: true, notice });
   });

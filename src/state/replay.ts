@@ -78,7 +78,9 @@ export async function runScenario(
     const now = jstDate(date, t.at);
     const day = await ensureDay(ctx, hh, date);
     const rechecking = day.tasks[t.task]?.state === 'rechecking';
-    const queued = (await ctx.store.listPrompts(hh, date)).find(p => p.task === t.task && p.state === 'queued');
+    // 痛みの聞き直し・L4 の安心文は台本の声かけとは別なので使わない
+    const queued = (await ctx.store.listPrompts(hh, date))
+      .find(p => p.task === t.task && p.state === 'queued' && !p.followup && !p.isReassurance);
     const prompt = queued ?? await enqueuePrompt(ctx, hh, date, t.task, {
       isRecheck: rechecking,
       text: rechecking ? defaultPromptText(t.task, household, true) : undefined,

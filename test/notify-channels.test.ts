@@ -1,24 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildLineMessages, parseAckPostback, sendLine } from '../src/notify/line.js';
+import { buildLineMessages, parseAckPostback, parseNoticePostback, sendLine } from '../src/notify/line.js';
 import { sendSlack } from '../src/notify/slack.js';
 import { sendEmail } from '../src/notify/email.js';
 import { maskEmail, maskId } from '../src/notify/mask.js';
 import { createNotifier } from '../src/notify/index.js';
 import { member } from './notify-fakes.js';
 
-test('LINE: noticeId があれば本文＋「確認した」postback ボタン', () => {
-  const msgs = buildLineMessages({ title: '🔴 緊急：転んだ', body: '転んじゃった', noticeId: 'nt_abc', url: 'https://x.run.app/' }) as Array<Record<string, any>>;
+test('LINE: noticeId があれば本文＋「確認した」「誤報だった」postback ボタン', () => {
+  const msgs = buildLineMessages({ title: '【至急】14:05', body: '転んじゃった', noticeId: 'nt_abc', url: 'https://x.run.app/' }) as Array<Record<string, any>>;
   assert.equal(msgs.length, 2);
   assert.equal(msgs[0].type, 'text');
-  assert.equal(msgs[0].text, '🔴 緊急：転んだ\n転んじゃった');
+  assert.equal(msgs[0].text, '【至急】14:05\n転んじゃった');
   assert.equal(msgs[1].type, 'template');
-  assert.ok(msgs[1].altText.startsWith('🔴 緊急：転んだ'));
+  assert.ok(msgs[1].altText.startsWith('【至急】14:05'));
   assert.equal(msgs[1].template.actions[0].data, 'ack:nt_abc');
-  assert.equal(msgs[1].template.actions[1].uri, 'https://x.run.app/');
+  assert.equal(msgs[1].template.actions[1].label, '誤報だった');
+  assert.equal(msgs[1].template.actions[1].data, 'false:nt_abc');
+  assert.equal(msgs[1].template.actions[2].uri, 'https://x.run.app/');
+  assert.ok(msgs[1].template.actions.length <= 4);   // buttons template の上限
   assert.equal(parseAckPostback(msgs[1].template.actions[0].data), 'nt_abc');
   assert.equal(parseAckPostback('other'), null);
+  assert.deepEqual(parseNoticePostback('ack:nt_abc'), { noticeId: 'nt_abc', falseAlarm: false });
+  assert.deepEqual(parseNoticePostback('false:nt_abc'), { noticeId: 'nt_abc', falseAlarm: true });
+  assert.equal(parseNoticePostback('false:'), null);
+  assert.equal(parseNoticePostback('nope:nt_abc'), null);
 });
 
 test('LINE: noticeId が無ければ text だけ', () => {

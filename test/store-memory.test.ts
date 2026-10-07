@@ -117,3 +117,38 @@ test('health: 生存信号と生活音', async () => {
   await s.recordNoise({ hh: HH, at: jstDate('2026-10-01', '09:05'), rms: 0.2 });
   assert.equal((await s.listRecentNoise(HH, at)).length, 1);
 });
+
+test('criteria v2 の新しい項目（day.l4・通知の falseAlarm/deferredReason/origin・確信度・安心文）が出し入れで残る', async () => {
+  const s = new MemoryStore();
+  await s.putDay(day('2026-10-01'));
+  const since = jstDate('2026-10-01', '10:31');
+  await s.updateDay(HH, '2026-10-01', { l4: { noticeId: 'nt_1', since, task: 'water', reason: '「転んだ」とおっしゃいました', origin: 'l4_words' } });
+  assert.equal((await s.getDay(HH, '2026-10-01'))!.l4!.since.getTime(), since.getTime());
+  await s.updateDay(HH, '2026-10-01', { l4: null });
+  assert.equal((await s.getDay(HH, '2026-10-01'))!.l4, null);
+
+  await s.putNotice({
+    id: 'nt_1', hh: HH, date: '2026-10-01', level: 'info', reason: 'x', evidence: '', turnId: null, steps: [], state: 'deferred',
+    createdAt: since, deferredReason: 'daily_cap', origin: 'not_done', uncertain: true,
+  });
+  await s.updateNotice(HH, 'nt_1', { state: 'acked', falseAlarm: true });
+  const n = (await s.getNotice(HH, 'nt_1'))!;
+  assert.deepEqual([n.state, n.falseAlarm, n.deferredReason, n.origin, n.uncertain], ['acked', true, 'daily_cap', 'not_done', true]);
+
+  await s.putPrompt({ ...prompt('pr_r', '10:34', 'delivered'), isReassurance: true, followup: { reason: '痛みの聞き直し', noticeId: 'nt_1' } });
+  const p = (await s.getPrompt(HH, '2026-10-01', 'pr_r'))!;
+  assert.equal(p.isReassurance, true);
+  assert.equal(p.followup?.noticeId, 'nt_1');
+});
+
+test('Firestore に書く前に undefined を入れ子まで落とす（Date はそのまま）', async () => {
+  const { stripUndefined } = await import('../src/store/firestore.js');
+  const at = new Date('2026-10-01T01:00:00Z');
+  const out = stripUndefined({
+    a: 1, b: undefined, l4: null, since: at,
+    classified: { status: 'done', confidence: undefined, uncertain: false },
+    list: [1, undefined, { x: undefined, y: 2 }],
+  });
+  assert.deepEqual(out, { a: 1, l4: null, since: at, classified: { status: 'done', uncertain: false }, list: [1, { y: 2 }] });
+  assert.ok((out as { since: Date }).since instanceof Date);
+});

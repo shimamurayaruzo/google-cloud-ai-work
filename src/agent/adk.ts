@@ -42,7 +42,7 @@ export function decidePermission(toolName: string, input: TurnInput): Permission
     return { blocked: true, reason: '家族の承認がない。承認画面で家族が確認してから共有する。' };
   }
   if (toolName === 'schedule_recheck' && input.recheckAllowed === false) {
-    return { blocked: true, reason: 'この項目の再確認は済んでいる。家族へ知らせる段階。' };
+    return { blocked: true, reason: 'この項目の再確認は上限に達している（または 1 回のみの項目）。家族へ知らせるかは状態機械が決める。' };
   }
   return { blocked: false };
 }
@@ -143,10 +143,12 @@ export class AdkTurnRunner implements TurnRunner {
     const record = collector.find(i => i.type === 'record');
     const status = record?.type === 'record' ? record.status : analyzeReply(input.prompt.task, input.replyText, input.household).status;
     const note = record?.type === 'record' ? record.note : '記録なし（規則で補完）';
+    const confidence = record?.type === 'record' ? record.confidence : undefined;
     const hasUrgent = collector.some(i => i.type === 'notify' && i.level === 'urgent');
 
     const outcome: TurnOutcome = {
-      classified: { status, note, by: 'llm' },
+      // 確信度は postProcess が record から読み、0.7 未満を uncertain にする
+      classified: { status, note, by: 'llm', ...(typeof confidence === 'number' ? { confidence } : {}) },
       // 空なら postProcess が規則の固定文で埋める
       say: finalText,
       expression: expressionFor(status, hasUrgent),
@@ -158,7 +160,7 @@ export class AdkTurnRunner implements TurnRunner {
     out.latencyMs = Date.now() - startedAt;
     logEvent('turn_classified', {
       hh: input.household.id, promptId: input.prompt.id, task: input.prompt.task,
-      status: out.classified.status, by: out.classified.by, functionCalls: calls,
+      status: out.classified.status, by: out.classified.by, confidence: out.classified.confidence ?? null, functionCalls: calls,
       intents: out.intents.map(i => i.type), latencyMs: out.latencyMs,
     });
     return out;

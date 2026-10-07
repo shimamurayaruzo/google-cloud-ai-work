@@ -66,3 +66,18 @@ function parts(d: Date) {
   for (const p of f.formatToParts(d)) o[p.type] = p.value;
   return o;
 }
+
+/** 家族向けの文面の時刻 "H:MM"（JST、先頭の 0 を付けない。例 9:15） */
+export function hm(d: Date): string {
+  const t = hhmm(d);
+  return t.startsWith('0') ? t.slice(1) : t;
+}
+
+const WEEKDAY_JA: Record<Weekday, string> = { Sun: '日', Mon: '月', Tue: '火', Wed: '水', Thu: '木', Fri: '金', Sat: '土' };
+
+/** "2026-10-08" → "10月8日（木）"（JST の曜日） */
+export function jaDateLabel(dateKeyStr: string): string {
+  const d = jstDate(dateKeyStr, '12:00');
+  const [, m, day] = dateKeyStr.split('-').map(Number);
+  return `${m}月${day}日（${WEEKDAY_JA[weekdayKey(d)]}）`;
+}

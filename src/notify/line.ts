@@ -14,11 +14,23 @@ export function ackPostbackData(noticeId: string): string {
   return `ack:${noticeId}`;
 }
 
-/** postback の data から noticeId を取り出す（形が違えば null） */
+/** 「誤報だった」ボタンの postback データ（criteria 4 節）。確認済みにしたうえで誤報として記録する */
+export function falseAlarmPostbackData(noticeId: string): string {
+  return `false:${noticeId}`;
+}
+
+/** postback の data を読む。`ack:<id>` は確認した、`false:<id>` は誤報だった（形が違えば null） */
+export function parseNoticePostback(data: string | undefined | null): { noticeId: string; falseAlarm: boolean } | null {
+  if (!data) return null;
+  const m = /^(ack|false):(.+)$/.exec(data);
+  if (!m) return null;
+  const id = m[2].trim();
+  return id.length > 0 ? { noticeId: id, falseAlarm: m[1] === 'false' } : null;
+}
+
+/** postback の data から noticeId を取り出す（`ack:` と `false:` のどちらも。形が違えば null） */
 export function parseAckPostback(data: string | undefined | null): string | null {
-  if (!data || !data.startsWith('ack:')) return null;
-  const id = data.slice(4).trim();
-  return id.length > 0 ? id : null;
+  return parseNoticePostback(data)?.noticeId ?? null;
 }
 
 /** push API に渡す messages を作る（テストしやすいよう分けてある） */
@@ -31,6 +43,7 @@ export function buildLineMessages(msg: OutboundMessage): unknown[] {
   // 全文は text で送り、ボタンだけを 2 通目の template にする。
   const actions: unknown[] = [
     { type: 'postback', label: '確認した', data: ackPostbackData(msg.noticeId), displayText: '確認した' },
+    { type: 'postback', label: '誤報だった', data: falseAlarmPostbackData(msg.noticeId), displayText: '誤報だった' },
   ];
   if (msg.url && msg.url.startsWith('https://')) {
     actions.push({ type: 'uri', label: '家族画面を開く', uri: msg.url });
@@ -40,7 +53,7 @@ export function buildLineMessages(msg: OutboundMessage): unknown[] {
     altText: truncate(`${msg.title} ${msg.body}`.replace(/\s+/g, ' '), 400),
     template: {
       type: 'buttons',
-      text: '内容を見たら「確認した」を押してください。押されないと次の方へ知らせます。',
+      text: '話せたら「確認した」、思い違いなどで心配がなければ「誤報だった」を押してください。押されないと次の方へ知らせます。',
       actions,
     },
   };

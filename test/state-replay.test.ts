@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { MemoryStore } from '../src/store/memory.js';
 import { demoHousehold } from '../src/seed/household.js';
 import { createFakeContext, KeywordTurnRunner } from '../src/state/fakes.js';
+import { RulesTurnRunner } from '../src/agent/rules.js';
 import { judgeStep, runScenario } from '../src/state/replay.js';
 import type { Scenario } from '../src/types.js';
 
@@ -30,9 +31,9 @@ test('dayservice-day.json を流すと 14 ステップ、期待値のある 13 �
   assert.equal(r.steps.find(s => s.at === '08:45')!.prompt, 'そろそろお着替えどうですか？');
   // 08:35 の着替えは、お迎え（9:00）までの残りから再確認を 10 分後に
   assert.equal(r.steps.find(s => s.at === '08:35')!.followUpAt, '08:45');
-  // 16:00 の「痛い」は urgent
-  assert.ok(r.steps.find(s => s.at === '16:00')!.notices.some(n => n.startsWith('urgent')));
-  assert.ok(familyNotify.calls.some(c => c.level === 'urgent'));
+  // 16:00 の「痛い」は L3（check）。L4（urgent）は転倒などの語だけ（criteria v2 3-2）
+  assert.ok(r.steps.find(s => s.at === '16:00')!.notices.some(n => n.startsWith('check')));
+  assert.ok(!familyNotify.calls.some(c => c.level === 'urgent'));
   assert.ok(tasks.scheduled.length >= 3);
 
   const day = (await store.getDay(h.id, '2026-09-29'))!;
@@ -56,4 +57,38 @@ test('judgeStep: notify の指定が無いときは urgent / check が出てい�
   assert.equal(judgeStep({ status: 'done' }, 'done', [{ level: 'check' }]), false);
   assert.equal(judgeStep({ status: 'done', notify: 'urgent' }, 'done', []), false);
   assert.equal(judgeStep({ status: 'done', notify: 'urgent' }, 'not_yet', [{ level: 'urgent' }]), false);
+});
+
+test('no-answer-escalation.json（規則）: 無反応 2 回目で check、3 回目で urgent と L4 モード', async () => {
+  const scenario = await load('no-answer-escalation');
+  const { ctx, store, familyNotify } = createFakeContext({ turnRunner: new RulesTurnRunner() });
+  const r = await runScenario(ctx, 'hh_demo', scenario, { withSummary: true });
+  assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
+  assert.equal(r.passCount, 4);
+  assert.deepEqual(familyNotify.calls.map(c => c.level), ['check', 'urgent']);
+  assert.equal(r.steps.at(-1)!.say, '');   // 返事が無くて L4 になったときは本人への発話なし
+  const day = (await store.getDay('hh_demo', scenario.date))!;
+  assert.ok(day.l4);
+  assert.match(r.summary!.sentences[1], /2 件、確認をお願いしたい/);
+});
+
+test('dress-three-times.json（規則）: 着替え 2 回目で info、3 回目で check、本人には「また後で声をかけますね」', async () => {
+  const scenario = await load('dress-three-times');
+  const { ctx, familyNotify } = createFakeContext({ turnRunner: new RulesTurnRunner() });
+  const r = await runScenario(ctx, 'hh_demo', scenario);
+  assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
+  assert.equal(r.passCount, 4);
+  assert.deepEqual(familyNotify.calls.filter(c => c.task === 'dress').map(c => c.level), ['info', 'check']);
+  assert.equal(r.steps[2].say, 'わかりました。また後で声をかけますね。');
+});
+
+test('dayservice-day.json（規則）: 全件一致、16:00 は check と聞き直しの予約', async () => {
+  const scenario = await load('dayservice-day');
+  const { ctx, store } = createFakeContext({ turnRunner: new RulesTurnRunner() });
+  const r = await runScenario(ctx, 'hh_demo', scenario, { withSummary: true });
+  assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
+  const follow = (await store.listPrompts('hh_demo', scenario.date)).find(p => p.followup);
+  assert.ok(follow);
+  assert.equal(follow!.state, 'queued');
+  assert.ok(r.summary!.sections!.concerns.some(l => /腰がちょっと痛い/.test(l) && /聞き直す予定/.test(l)));
 });

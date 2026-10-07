@@ -34,10 +34,12 @@ export function createTools(collector: Intent[], currentTask: TaskKey = 'greetin
       task: z.string().describe('確認していた項目のキー。例: dress, diaper, medicine'),
       status: z.enum(['done', 'not_yet', 'no_answer', 'unclear']),
       note: z.string().describe('根拠になった本人の言葉を短く。推測は書かない'),
+      confidence: z.number().min(0).max(1).describe('判定の確信度。本人の発話か分からない、言葉が曖昧なら低く'),
     }),
-    execute: ({ task, status, note }) => {
+    execute: ({ task, status, note, confidence }) => {
       const key = toTaskKey(task, currentTask);
-      collector.push({ type: 'record', task: key, status, note: excerpt(note, 30) }); // 本人の言葉は短い抜粋だけ残す
+      // 本人の言葉は短い抜粋だけ残す
+      collector.push({ type: 'record', task: key, status, note: excerpt(note, 30), ...(typeof confidence === 'number' ? { confidence } : {}) });
       return { ok: true, recorded: true, task: key, status };
     },
   });
@@ -45,7 +47,7 @@ export function createTools(collector: Intent[], currentTask: TaskKey = 'greetin
   const scheduleRecheck = new FunctionTool({
     name: 'schedule_recheck',
     description:
-      '少し置いてもう一度声をかける予約を入れる。「まだ」や返事なしのときに使う。同じ項目の再確認は1回まで。',
+      '少し置いてもう一度声をかける予約を入れる。「まだ」や返事なしのときに使う。同じ項目の再確認は初回のあと2回まで（合計3回）。痛みや転倒を訴えたときは使わない。',
     parameters: z.object({
       minutes: z.number().int().min(5).max(60),
       reason: z.string(),
@@ -59,7 +61,7 @@ export function createTools(collector: Intent[], currentTask: TaskKey = 'greetin
   const notifyFamily = new FunctionTool({
     name: 'notify_family',
     description:
-      '家族に知らせる。level は urgent(「痛い」「転んだ」「助けて」などの発話。即時) / check(緊急ではないが確認してほしい) / info(準備完了などの短い報告)。根拠の発話を evidence に必ず入れる。',
+      '家族に知らせる。level は urgent(「転んだ」「動けない」「息苦しい」「胸が痛い」「助けて」「苦しい」など転倒・急な症状の発話だけ。至急) / check(「腰が痛い」などの痛み、外部への連絡の依頼。確認してほしい) / info(準備完了などの短い報告)。根拠の発話を evidence に必ず入れる。医療の判断はしない。',
     parameters: z.object({
       level: z.enum(['urgent', 'check', 'info']),
       reason: z.string(),

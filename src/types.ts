@@ -35,6 +35,17 @@ export type TaskState = 'pending' | 'asked' | 'rechecking' | 'done' | 'escalated
 export type ReplySource = 'ipad' | 'replay' | 'test';
 export type Expression = 'smile' | 'listen' | 'think' | 'worry';
 export type NoticeLevel = 'urgent' | 'check' | 'info';
+/**
+ * 通知の由来（criteria v2 / report-design v2 2 節。文面の型を選ぶのに使う）
+ *  l4_words … L4 の語（転んだ・動けない・息苦しい・助けて 等）  fire … 火事・煙・熱い
+ *  pain … 痛みの言葉（L3）  pain_followup … 痛みの聞き直しの結果
+ *  no_answer … 連続無反応（L3/L4）  not_done … 再確認しても取れない（L2/L3）
+ *  contact … 本人からの外部連絡の依頼  departure … デイへ出発  repeat … 同じ質問の増加（変化評価）
+ *  summary … 今日の様子  plan … 今日の声かけ計画  device … 端末の沈黙など運用  other … それ以外
+ */
+export type NoticeOrigin =
+  | 'l4_words' | 'fire' | 'pain' | 'pain_followup' | 'no_answer' | 'not_done' | 'contact'
+  | 'departure' | 'repeat' | 'summary' | 'plan' | 'device' | 'other';
 export type Channel = 'line' | 'email' | 'slack';
 
 // ---- 世帯 ----
@@ -80,7 +91,17 @@ export interface Household {
   policy: {
     recheckOnce: boolean;
     recheckMinutes: number;
+    /** 1 確認あたりの再確認の上限（criteria 5 節: 初回＋再確認 2 回 = 計 3 回）。あれば recheckOnce より優先 */
+    maxRechecks?: number;
+    /** 通知を翌朝に回す時間帯（L3/L2）。就寝時間帯（sleepHours）とは別の概念 */
     quietHours?: { from: string; to: string };
+    /** 就寝時間帯（criteria 3-3 ★8）。声かけをしない・無反応判定の対象外。既定 21:30〜07:30 */
+    sleepHours?: { from: string; to: string };
+  };
+  /** 通知文に書く連絡先（report-design 2 節）。未設定なら該当の文を省く。住所・持病はここに置かない */
+  contacts?: {
+    homePhone?: string;
+    nearby?: { name: string; phone: string };
   };
   killSwitch: boolean;
   createdAt?: Date;
@@ -96,6 +117,12 @@ export interface TaskRecord {
   /** 要約に引用する短い抜粋（本人の言葉。推測は書かない） */
   evidence?: string;
   recheckCount: number;
+  /** この一巡で「取れなかった」回数（not_yet / no_answer / unclear。今回を含む）。新しい一巡で 0 に戻る */
+  failCount?: number;
+  /** 続けて返事が無かった回数（no_answer の連続。返事があれば 0） */
+  noAnswerStreak?: number;
+  /** 連続無反応の最初の声かけの時刻（通知文の「HH:MM から」） */
+  noAnswerSince?: Date;
   promptIds: PromptId[];
   lastTurnId?: TurnId;
   /** 家族へ段階を上げた時刻。同じ項目で escalate は一日 1 回だけにするための印（state/machine.ts） */
@@ -108,8 +135,14 @@ export interface DaySummary {
   text: string;
   sentences: string[];
   citations: Citation[];
-  /** 直近 3 日との比較コメント（断定しない） */
+  /** 昨日までとの比較（断定しない）。sections.comparison を 1 つにつないだもの */
   changeNote?: string;
+  /**
+   * report-design v2 1 節の型の構造（画面が使う）。キーは
+   * heading / conclusion / replies（お返事の記録）/ concerns（気になったこと）/
+   * continued（お知らせの続き）/ comparison（昨日までとの比較）/ about（この記録について）
+   */
+  sections?: Record<string, string[]>;
   sentAt?: Date;
 }
 
@@ -119,6 +152,18 @@ export interface DaySignals {
   /** 短時間に同じ質問を繰り返した回数（例: 「何の薬？」） */
   repeatedQuestions: number;
   urgentCount: number;
+  /** 家族が「誤報だった」を付けた通知の数（その通知の日付で数える。criteria 4 節） */
+  falseAlarmCount?: number;
+}
+
+/** L4 モード（criteria 1 節 L4）。立っている間は通常の声かけを止め、3 分ごとに安心文だけを流す */
+export interface DayL4 {
+  noticeId: NoticeId;
+  since: Date;
+  task?: TaskKey;
+  reason: string;
+  /** l4_words / fire / no_answer */
+  origin?: NoticeOrigin;
 }
 
 export interface Day {
@@ -131,6 +176,8 @@ export interface Day {
   tasks: Partial<Record<TaskKey, TaskRecord>>;
   summary: DaySummary | null;
   signals: DaySignals;
+  /** L4 モード。家族の「確認した」で null に戻る */
+  l4?: DayL4 | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -150,6 +197,10 @@ export interface Prompt {
   deliveredAt?: Date;
   expression: Expression;
   ttsUrl?: string;
+  /** L4 モードの安心文（質問ではない。状態機械を動かさない） */
+  isReassurance?: boolean;
+  /** 痛みの聞き直し（criteria 3-2）。状態機械を動かさず、返事は規則で扱う */
+  followup?: { noticeId?: NoticeId; reason: string };
 }
 
 export interface ToolCallRecord {
@@ -171,7 +222,17 @@ export interface Turn {
   replyText: string | null;
   replySource: ReplySource;
   repliedAt: Date;
-  classified: { status: Classification; note: string; by: 'llm' | 'rules' };
+  classified: {
+    status: Classification; note: string; by: 'llm' | 'rules';
+    /** 判定の確信度 0〜1（規則は 1.0、unclear は 0.5） */
+    confidence?: number;
+    /** confidence < 0.7。判定未確定（criteria 2 ★2） */
+    uncertain?: boolean;
+  };
+  /** normal（既定）/ followup（痛みの聞き直しへの返事）/ l4（L4 モード中の返事。判定しない） */
+  kind?: 'normal' | 'followup' | 'l4';
+  /** kind=followup のとき、聞き直しの元になった通知 */
+  followupNoticeId?: NoticeId;
   toolCalls: ToolCallRecord[];
   /** 本人へ返した一言 */
   say: string;
@@ -205,7 +266,15 @@ export interface Notice {
   createdAt: Date;
   /** 静かな時間帯で翌朝に回したとき */
   deferredUntil?: Date;
+  /** deferred にした理由。daily_cap は翌朝に送らず夕方の「お知らせの続き」にまとめる */
+  deferredReason?: 'quiet_hours' | 'daily_cap';
   ackedBy?: MemberId;
+  /** 家族が「誤報だった」を付けた（criteria 4 節） */
+  falseAlarm?: boolean;
+  /** 文面の型を選ぶ由来 */
+  origin?: NoticeOrigin;
+  /** 判定未確定（LLM の確信度 < 0.7）のまま即時に送った */
+  uncertain?: boolean;
 }
 
 // ---- 承認 ----

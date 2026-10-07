@@ -314,6 +314,29 @@ test('POST /webhook/line: 「確認した」postback は送った人の memberId
   assert.deepEqual(notifyCalls[0], { name: 'ack', args: ['hh_test', 'nt_1', 'mem_1', NOW] });
 });
 
+test('POST /webhook/line: 「誤報だった」postback（false:）は falseAlarm 付きで ack', { skip: skipReason }, async () => {
+  const { ctx, notifyCalls } = createCtx();
+  const r = await call(createRouter!(ctx), lineReq({ events: [{ type: 'postback', source: { userId: 'U_secret' }, postback: { data: 'false:nt_1' } }] }));
+  assert.equal(r.status, 200);
+  assert.equal(r.json.handled, 1);
+  assert.deepEqual(notifyCalls[0], { name: 'ack', args: ['hh_test', 'nt_1', 'mem_1', NOW, { falseAlarm: true }] });
+});
+
+test('POST /api/family/notices/:nt/ack: body の falseAlarm を渡す。真偽値以外は 400', { skip: skipReason }, async () => {
+  const { ctx, notifyCalls } = createCtx();
+  const router = createRouter!(ctx);
+  const headers = { cookie: familyCookie(), 'content-type': 'application/json' };
+  const r = await call(router, mockReq({ method: 'POST', path: '/api/family/notices/nt_1/ack', headers, body: { falseAlarm: true } }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(notifyCalls[0].args.slice(0, 3), ['hh_test', 'nt_1', 'family']);
+  assert.deepEqual(notifyCalls[0].args[4], { falseAlarm: true });
+  const plain = await call(router, mockReq({ method: 'POST', path: '/api/family/notices/nt_1/ack', headers, body: {} }));
+  assert.equal(plain.status, 200);
+  assert.equal(notifyCalls[1].args.length, 4);
+  const bad = await call(router, mockReq({ method: 'POST', path: '/api/family/notices/nt_1/ack', headers, body: { falseAlarm: 'yes' } }));
+  assert.equal(bad.status, 400);
+});
+
 test('POST /webhook/line: 署名が違えば 401 で何もしない', { skip: skipReason }, async () => {
   const { ctx, notifyCalls } = createCtx();
   const r = await call(createRouter!(ctx), lineReq({ events: [{ type: 'postback', source: { userId: 'U_secret' }, postback: { data: 'ack:nt_1' } }] }, 'wrong-secret'));

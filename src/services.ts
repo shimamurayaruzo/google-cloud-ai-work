@@ -10,7 +10,7 @@ import type { Store } from './store/types.js';
 import type { Clock } from './time.js';
 import type {
   Channel, Classification, DateKey, Day, Expression, Household, HouseholdId, Member,
-  Notice, NoticeLevel, Prompt, ReplySource, TaskKey, ToolCallRecord, TurnId,
+  Notice, NoticeLevel, NoticeOrigin, Prompt, ReplySource, TaskKey, ToolCallRecord, TurnId,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -35,14 +35,22 @@ export interface TurnInput {
 
 /** エージェントが「やりたい」と決めた副作用。実際の実行は state/applyTurnOutcome が行う */
 export type Intent =
-  | { type: 'record'; task: TaskKey; status: Classification; note: string }
+  | { type: 'record'; task: TaskKey; status: Classification; note: string; confidence?: number }
   | { type: 'recheck'; minutes: number; reason: string }
-  | { type: 'notify'; level: NoticeLevel; reason: string; evidence: string }
+  | { type: 'notify'; level: NoticeLevel; reason: string; evidence: string; origin?: NoticeOrigin }
+  /** 聞き直しの予約（痛みの 3 時間後など）。再確認 recheck とは別で、回数制限の対象外 */
+  | { type: 'followup'; minutes: number; task: TaskKey; text: string; reason: string }
   | { type: 'share_external'; recipient: 'doctor' | 'care_manager'; summary: string }
   | { type: 'blocked'; tool: string; args: Record<string, unknown>; reason: string };
 
 export interface TurnOutcome {
-  classified: { status: Classification; note: string; by: 'llm' | 'rules' };
+  classified: {
+    status: Classification; note: string; by: 'llm' | 'rules';
+    /** 判定の確信度 0〜1（規則は 1.0、unclear は 0.5） */
+    confidence?: number;
+    /** confidence < 0.7 */
+    uncertain?: boolean;
+  };
   /** 本人へ返す一言（2 文まで） */
   say: string;
   expression: Expression;
@@ -64,7 +72,7 @@ export interface TurnRunner {
 export interface OutboundMessage {
   title: string;
   body: string;
-  /** LINE の「確認した」ボタン用。postback に載せる */
+  /** LINE の「確認した」「誤報だった」ボタン用。postback に載せる */
   noticeId?: string;
   /** 家族画面で開く URL（あれば） */
   url?: string;
@@ -90,15 +98,20 @@ export interface NotifyRequest {
   turnId: TurnId | null;
   task?: TaskKey;
   now: Date;
+  /** 文面の型を選ぶ由来（省略時 other） */
+  origin?: NoticeOrigin;
+  /** 判定未確定のまま送る（通知文に「判定は未確定です」を添える） */
+  uncertain?: boolean;
 }
 
 /** 通知の作成・送信・段階上げ（docs/02 §4 notify_family, §5 段階上げ） */
 export interface FamilyNotify {
   /** notices を作り、順番 1 の家族に送り、waitMinutes 後の /internal/escalate を予約する。
-   *  check/info は静かな時間帯なら deferred にして翌朝へ。urgent は即時。 */
+   *  check/info は静かな時間帯なら deferred にして翌朝へ。urgent は即時。
+   *  info は 1 日 5 件まで（超えたら deferred / daily_cap。夕方の要約にまとめる）。 */
   notify(req: NotifyRequest): Promise<Notice>;
-  /** 「確認した」 */
-  ack(hh: HouseholdId, noticeId: string, memberId: string, now: Date): Promise<Notice | null>;
+  /** 「確認した」。opts.falseAlarm なら「誤報だった」も記録する（段階上げと L4 の安心文は止まる） */
+  ack(hh: HouseholdId, noticeId: string, memberId: string, now: Date, opts?: { falseAlarm?: boolean }): Promise<Notice | null>;
   /** Tasks から呼ばれる段階上げ。未確認なら次の順番へ。全員未確認ならメールで全員へ再送し escalated */
   escalate(hh: HouseholdId, noticeId: string, now: Date): Promise<Notice | null>;
   /** 静かな時間帯明けに deferred を送る（/internal/plan の朝に呼ぶ） */

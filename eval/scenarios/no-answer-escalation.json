@@ -1,0 +1,41 @@
+{
+  "name": "無反応が 3 回続く（criteria v2 3-3: 2 回目で L3、3 回目で L4）",
+  "date": "2026-10-01",
+  "isDayservice": false,
+  "turns": [
+    {
+      "at": "08:00",
+      "task": "greeting",
+      "reply": "おはよう",
+      "expect": {
+        "status": "done"
+      }
+    },
+    {
+      "at": "12:00",
+      "task": "lunch",
+      "reply": null,
+      "expect": {
+        "status": "no_answer"
+      }
+    },
+    {
+      "at": "12:15",
+      "task": "lunch",
+      "reply": null,
+      "expect": {
+        "status": "no_answer",
+        "notify": "check"
+      }
+    },
+    {
+      "at": "12:30",
+      "task": "lunch",
+      "reply": null,
+      "expect": {
+        "status": "no_answer",
+        "notify": "urgent"
+      }
+    }
+  ]
+}
