@@ -1,4 +1,4 @@
-// web/ の静的配信と /healthz。
+// web/ の静的配信と /ping（死活確認。/healthz は Cloud Run の前段が予約していてコンテナに届かないので使わない）。
 //   GET /        → web/index.html
 //   GET /device  → web/device.html（無ければ web/dev/device.html）
 //   GET /family  → web/family.html（無ければ web/dev/family.html）
@@ -66,7 +66,7 @@ export async function sendWebFile(res: Response, candidates: string[]): Promise<
 }
 
 export function registerStaticRoutes(router: Router): void {
-  router.get('/healthz', (_req: Request, res: Response) => { ok(res, { ok: true }); });
+  router.get('/ping', (_req: Request, res: Response) => { ok(res, { ok: true }); });
 
   router.get('/', (_req, res) => sendWebFile(res, ['index.html']));
   router.get('/device', (_req, res) => sendWebFile(res, ['device.html', 'dev/device.html']));

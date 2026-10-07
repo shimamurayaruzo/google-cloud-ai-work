@@ -317,6 +317,6 @@ Cloud Run 1 サービスのパスごとの約束です。設計の元は `docs/0
 | `GET /family` | `web/family.html`（本画面）。無ければ `web/dev/family.html` |
 | `GET /dev/…` | `web/dev/…` |
 | `GET /assets/…`、`GET /<ファイル名>.<拡張子>` | `web/assets/…`、`web/` 直下のファイル（本画面の JS・CSS・画像） |
-| `GET /healthz` | `{ "ok": true }` |
+| `GET /ping` | `{ "ok": true }` |
 
 配れる拡張子: html, js, mjs, css, png, svg, json, mp3, ico, webp, jpg。`..` を含むパスや `.` で始まるファイルは 404。

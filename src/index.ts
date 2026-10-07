@@ -25,7 +25,7 @@ http('helloHttp', async (req, res) => {
     logError('request_failed', error, { path: req.path, method: req.method });
     if (!res.headersSent) json(res, 500, { ok: false, error: 'internal error' });
   } finally {
-    if (req.path !== '/api/device/heartbeat' && req.path !== '/healthz') {
+    if (req.path !== '/api/device/heartbeat' && req.path !== '/ping') {
       logEvent('request', { path: req.path, method: req.method, status: res.statusCode, ms: Date.now() - startedAt });
     }
   }
