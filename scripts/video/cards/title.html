@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>タイトル</title>
+<!-- 動画のカット 1（タイトル）。record.ts が 1920×1080 で撮影する。配色は docs/04 と同じ -->
+<style>
+:root{--bg:#f4f6f3;--paper:#fff;--ink:#1f2a24;--ink-2:#4a5650;--ink-3:#7a8680;--line:#d9dfda;--accent:#1f6f5b;--accent-soft:#e3efe9;
+--display:"Yu Mincho","Hiragino Mincho ProN",serif;--body:"Yu Gothic","Noto Sans JP","Meiryo",sans-serif}
+html,body{margin:0;width:1920px;height:1080px;background:var(--bg);color:var(--ink);font-family:var(--body);overflow:hidden}
+.wrap{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:0 200px}
+.kicker{font-size:30px;color:var(--accent);letter-spacing:.2em;font-weight:700;margin-bottom:28px}
+h1{font-family:var(--display);font-size:150px;font-weight:700;line-height:1.15;margin:0;letter-spacing:.06em}
+.rule{width:180px;height:8px;background:var(--accent);border-radius:4px;margin:56px 0 44px}
+.sub{font-size:46px;line-height:1.6;color:var(--ink-2);font-weight:600}
+.foot{position:absolute;left:200px;bottom:90px;font-size:26px;color:var(--ink-3)}
+.face{position:absolute;right:200px;top:50%;transform:translateY(-50%);width:300px;height:300px}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="kicker">在宅介護エージェント</div>
+  <h1>見張らない見守り</h1>
+  <div class="rule"></div>
+  <div class="sub">予定と返答で次の声かけを変える<br>在宅介護エージェント</div>
+</div>
+<svg class="face" viewBox="-12 0 224 200" aria-hidden="true">
+  <circle cx="100" cy="104" r="88" fill="#ffe6c4"/>
+  <circle cx="52" cy="122" r="11" fill="#f4b4a2" opacity=".55"/><circle cx="148" cy="122" r="11" fill="#f4b4a2" opacity=".55"/>
+  <path d="M58 96 q12 -14 24 0" stroke="#3b3330" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M118 96 q12 -14 24 0" stroke="#3b3330" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M72 128 q28 26 56 0" stroke="#3b3330" stroke-width="6" stroke-linecap="round" fill="none"/>
+</svg>
+<div class="foot">カメラは使いません。音声は保存しません。</div>
+</body></html>

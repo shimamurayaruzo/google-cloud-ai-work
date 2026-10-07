@@ -10,6 +10,7 @@ import { config } from '../config.js';
 import type { AppContext } from '../services.js';
 import { logError, logEvent, logWarn } from '../log.js';
 import { parseNoticePostback } from '../notify/index.js';
+import { clearL4ForNotice } from '../state/l4.js';
 import type { Household, HouseholdId, Member } from '../types.js';
 import { verifyLineSignature } from './auth.js';
 import { json, ok, type Router } from './router.js';
@@ -52,7 +53,9 @@ async function onAck(ctx: AppContext, hh: HouseholdId, noticeId: string, memberI
   const n = falseAlarm
     ? await ctx.familyNotify.ack(hh, noticeId, memberId, now, { falseAlarm: true })
     : await ctx.familyNotify.ack(hh, noticeId, memberId, now);
-  logEvent('line_ack', { hh, noticeId, memberId, found: Boolean(n), falseAlarm });
+  // L4 を立てた通知なら、その場で L4 を下ろす（安心文を止める）
+  const l4Cleared = n ? await clearL4ForNotice(ctx, hh, noticeId, now) : false;
+  logEvent('line_ack', { hh, noticeId, memberId, found: Boolean(n), falseAlarm, l4Cleared });
 }
 
 export async function handleLineEvents(ctx: AppContext, hh: HouseholdId, events: LineEvent[]): Promise<number> {

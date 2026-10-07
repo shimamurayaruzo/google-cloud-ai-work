@@ -19,7 +19,7 @@ export const config = {
 
   appPassphrase: env('APP_PASSPHRASE'),
   internalToken: env('INTERNAL_TOKEN'),
-  /** "hh_main:token1,hh_demo:token2" */
+  /** "hh_main:token1,hh_demo:token2"（区切りは , か ;。gcloud の --update-env-vars はカンマを区切りと解釈するので ; も受け付ける） */
   deviceTokens: parseDeviceTokens(env('DEVICE_TOKENS')),
   defaultHouseholdId: env('HOUSEHOLD_ID', 'hh_main'),
 
@@ -44,7 +44,7 @@ export const config = {
 
 function parseDeviceTokens(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const part of raw.split(',')) {
+  for (const part of raw.split(/[,;]/)) {
     const i = part.indexOf(':');
     if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
   }

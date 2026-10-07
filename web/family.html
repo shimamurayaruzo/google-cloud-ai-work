@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>見守り ・ 家族の画面</title>
+<link rel="stylesheet" href="/family.css">
+</head>
+<body>
+
+<!-- ログイン（未ログインのときだけ） -->
+<main id="login" class="login hidden" aria-labelledby="loginTtl">
+  <div class="card">
+    <h1 id="loginTtl">見守り ・ 家族の画面</h1>
+    <p class="meta">合言葉を入れてください。12 時間ログインしたままになります。</p>
+    <form id="loginForm" class="loginrow" autocomplete="off">
+      <input class="tx" type="password" id="pass" placeholder="合言葉" aria-label="合言葉" required>
+      <button class="btn" type="submit">入る</button>
+    </form>
+    <p class="err-line hidden" id="loginErr"></p>
+  </div>
+</main>
+
+<!-- 本体 -->
+<div id="app" class="app hidden">
+  <header class="hd">
+    <div class="hd-row">
+      <div class="hd-left">
+        <div class="ttl" id="ttl">見守り</div>
+        <div class="st" id="runState">● 読み込み中</div>
+      </div>
+      <button class="stopbtn" id="stopBtn" type="button">今すぐ止める</button>
+    </div>
+    <div class="hd-mode hidden" id="modeBox">
+      <span class="meta">iPad のモード</span>
+      <div class="seg" id="modeSeg" role="group" aria-label="iPad のモード">
+        <button type="button" data-m="bedroom">寝室</button>
+        <button type="button" data-m="bath">お風呂</button>
+      </div>
+    </div>
+    <p class="mode-note hidden" id="modeNote">お風呂モード: 体を洗うことと歯磨きを促すだけです。安全の確認はしません（転んだことなどは分かりません）。</p>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button type="button" data-p="today" class="on">今日</button>
+      <button type="button" data-p="plan">計画</button>
+      <button type="button" data-p="appr">承認待ち<span class="badge hidden" id="apprBadge"></span></button>
+      <button type="button" data-p="ledger">台帳</button>
+      <button type="button" data-p="settings">設定</button>
+      <button type="button" data-p="caps">できること</button>
+    </nav>
+    <div class="l4bar hidden" id="l4bar" role="alert">
+      <span>至急の通知があります。確認したら『確認した』を押してください。</span>
+      <button type="button" class="btn sm white" id="l4Go">通知を見る</button>
+    </div>
+  </header>
+
+  <div class="pausebar hidden" id="pausebar">
+    <span>止めています。声かけもお知らせもしません。</span>
+    <button type="button" class="btn sec sm" id="resumeBtn">再開する</button>
+  </div>
+
+  <div class="body" id="body">
+    <section class="pane on" id="p-today" aria-label="今日"></section>
+    <section class="pane" id="p-plan" aria-label="計画"></section>
+    <section class="pane" id="p-appr" aria-label="承認待ち"></section>
+    <section class="pane" id="p-ledger" aria-label="台帳"></section>
+    <section class="pane" id="p-settings" aria-label="設定"></section>
+    <section class="pane" id="p-caps" aria-label="できること"></section>
+  </div>
+</div>
+
+<!-- 下から出る紙: 会話の詳細 -->
+<div class="sheet-bg" id="turnBg"><div class="sheet" id="turnSheet" role="dialog" aria-modal="true" aria-label="会話の詳細"></div></div>
+
+<!-- 下から出る紙: 今すぐ止める -->
+<div class="sheet-bg" id="stopBg"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="stopTtl">
+  <h3 id="stopTtl">今すぐ止めますか？</h3>
+  <p>声かけとお知らせを<b>すべて</b>止めます。お母さまには「少し休みますね」とだけお伝えします。</p>
+  <p class="meta">止めている間は、「痛い」などの言葉があってもお知らせしません。再開はこの画面の「再開する」から。</p>
+  <div class="btns"><button type="button" class="btn danger" id="stopYes">止める</button><button type="button" class="btn ghost" id="stopNo">やめておく</button></div>
+</div></div>
+
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/family.js"></script>
+</body>
+</html>

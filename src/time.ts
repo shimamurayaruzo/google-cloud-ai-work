@@ -75,6 +75,17 @@ export function hm(d: Date): string {
 
 const WEEKDAY_JA: Record<Weekday, string> = { Sun: '日', Mon: '月', Tue: '火', Wed: '水', Thu: '木', Fri: '金', Sat: '土' };
 
+/** 曜日の漢字 1 字（JST。例「火」） */
+export function jaWeekday(d: Date): string {
+  return WEEKDAY_JA[weekdayKey(d)];
+}
+
+/** 本人に読み上げる時刻 "15:30" → "15 時 30 分"、"15:00" → "15 時" */
+export function spokenTime(time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  return m ? `${h} 時 ${m} 分` : `${h} 時`;
+}
+
 /** "2026-10-08" → "10月8日（木）"（JST の曜日） */
 export function jaDateLabel(dateKeyStr: string): string {
   const d = jstDate(dateKeyStr, '12:00');

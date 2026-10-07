@@ -1,0 +1,13 @@
+{
+  "name": "お風呂モード・返事なし（docs/02 §11.3: 洗う声かけに 2 回返事なし → 確認のお願い／「上がりましたか」に 2 回返事なし → 確認のお願いをして寝室へ。どちらも L4 にはしない）",
+  "date": "2026-10-03",
+  "isDayservice": false,
+  "turns": [
+    { "at": "19:30", "mode": "bath", "expect": { "mode": "bath" } },
+    { "at": "19:40", "task": "bath", "reply": null, "expect": { "status": "no_answer", "mode": "bath" } },
+    { "at": "19:42", "task": "bath", "reply": null, "expect": { "status": "no_answer", "notify": "check", "mode": "bath" } },
+    { "at": "19:52", "task": "bath", "reply": null, "expect": { "status": "no_answer", "mode": "bath" } },
+    { "at": "19:54", "task": "bath", "reply": null, "expect": { "status": "no_answer", "notify": "check", "mode": "bedroom" } },
+    { "at": "20:00", "task": "water", "reply": "のんだよ", "expect": { "status": "done", "mode": "bedroom" } }
+  ]
+}

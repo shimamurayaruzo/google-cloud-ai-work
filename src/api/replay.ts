@@ -26,12 +26,18 @@ const ScenarioSchema = z.object({
   isDayservice: z.boolean(),
   turns: z.array(z.object({
     at: HHMM,
-    task: z.enum(TASK_KEYS),
-    reply: z.string().max(500).nullable(),
+    /** mode だけのステップ（起動モードの切替だけ）では省略できる */
+    task: z.enum(TASK_KEYS).optional(),
+    reply: z.string().max(500).nullable().optional(),
+    /** このステップの前に起動モードを切り替える（docs/02 §11） */
+    mode: z.enum(['bedroom', 'bath']).optional(),
     expect: z.object({
-      status: z.enum(['done', 'not_yet', 'no_answer', 'unclear']),
+      status: z.enum(['done', 'not_yet', 'no_answer', 'unclear']).optional(),
       notify: z.enum(['urgent', 'check', 'info']).optional(),
+      mode: z.enum(['bedroom', 'bath']).optional(),
     }).optional(),
+  }).refine(t => t.mode !== undefined || (t.task !== undefined && t.reply !== undefined), {
+    message: 'task と reply を書いてください（mode だけのステップは task を省けます）',
   })).min(1).max(100),
 });
 

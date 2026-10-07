@@ -178,6 +178,7 @@ async function composeSummary(
   };
 }
 
+/** 声かけへの通常の返事（聞き直し・L4 の間・本人からの発話（utterance）は除く。docs/02 §11.2: 発話は「お返事の記録」に載せない） */
 function isNormal(t: Turn): boolean {
   return (t.kind ?? 'normal') === 'normal' && t.classified.note !== '停止中';
 }
@@ -186,11 +187,20 @@ function q(text: string | null | undefined, max = QUOTE_MAX): string {
   return excerpt(text, max).replace(/[「」]/g, '');
 }
 
-/** お返事の記録: 判定できたターン（判定未確定のものは「お知らせの続き」へ） */
+/** 同じ項目の次のお返事（判定できた通常のターン）が「済み」なら、途中の「まだ」は書かない（最終状態だけを書く） */
+function laterDone(t: Turn, turns: Turn[]): boolean {
+  const next = turns
+    .filter(x => x !== t && isNormal(x) && !x.classified.uncertain && x.task === t.task && x.repliedAt.getTime() > t.repliedAt.getTime())
+    .sort((a, b) => a.repliedAt.getTime() - b.repliedAt.getTime())[0];
+  return next?.classified.status === 'done';
+}
+
+/** お返事の記録: 判定できたターン（判定未確定のものは「お知らせの続き」へ）。会話（talk）は載せない */
 function replyLines(turns: Turn[]): Line[] {
   const out: Line[] = [];
   for (const t of turns) {
-    if (!isNormal(t) || t.classified.uncertain) continue;
+    if (!isNormal(t) || t.classified.uncertain || t.task === 'talk') continue;
+    if (t.classified.status === 'not_yet' && laterDone(t, turns)) continue;
     const at = t.promptedAt ?? t.repliedAt;
     const head = `${hm(at)} ${TASK_LABELS[t.task]}の声かけ`;
     let text: string;

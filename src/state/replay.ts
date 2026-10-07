@@ -8,10 +8,11 @@
 import type { AppContext, Intent } from '../services.js';
 import { hhmm, jstDate } from '../time.js';
 import type {
-  Classification, DateKey, DaySummary, HouseholdId, Notice, Scenario, ScenarioTurn, TaskKey,
+  Classification, DateKey, DaySummary, HouseholdId, HouseholdMode, Notice, Scenario, ScenarioTurn, TaskKey,
 } from '../types.js';
 import { demoHousehold } from '../seed/household.js';
 import { deliverPrompt, enqueuePrompt, ensureDay } from './day.js';
+import { handleBathReturn, modeOf, switchMode } from './mode.js';
 import { defaultPromptText } from './plan.js';
 import { buildSummary } from './summary.js';
 import { processReply } from './turn.js';
@@ -31,6 +32,12 @@ export interface ReplayStep {
   turnId?: string;
   expected?: ScenarioTurn['expect'];
   pass?: boolean;
+  /** turn … 声かけと返事 1 回、mode … 起動モードの切替（家族の操作か、お風呂の自動の戻り。docs/02 §11） */
+  kind?: 'turn' | 'mode';
+  /** このステップの後の起動モード */
+  mode?: HouseholdMode;
+  /** kind=mode のとき、誰が切り替えたか */
+  modeBy?: 'family' | 'system';
 }
 
 export interface ReplayResult {
@@ -47,9 +54,13 @@ export interface ReplayResult {
  *  - status は一致すること
  *  - expect.notify があれば、そのレベルの通知がこのステップで作られていること
  *  - expect.notify が無ければ、urgent / check の通知が作られていないこと（info は問わない）
+ *  - expect.mode があれば、ステップの後の起動モードが一致すること（mode だけのステップは status を見ない）
  */
-export function judgeStep(expect: NonNullable<ScenarioTurn['expect']>, status: Classification, notices: Pick<Notice, 'level'>[]): boolean {
-  if (status !== expect.status) return false;
+export function judgeStep(
+  expect: NonNullable<ScenarioTurn['expect']>, status: Classification | null, notices: Pick<Notice, 'level'>[], mode?: HouseholdMode,
+): boolean {
+  if (expect.status !== undefined && status !== expect.status) return false;
+  if (expect.mode !== undefined && mode !== expect.mode) return false;
   if (expect.notify) return notices.some(n => n.level === expect.notify);
   return !notices.some(n => n.level === 'urgent' || n.level === 'check');
 }
@@ -74,41 +85,74 @@ export async function runScenario(
   let failCount = 0;
 
   const turns = [...scenario.turns].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  const judge = (step: ReplayStep, expect: ScenarioTurn['expect'], status: Classification | null, notices: Pick<Notice, 'level'>[]) => {
+    if (!expect) return;
+    step.expected = expect;
+    step.pass = judgeStep(expect, status, notices, step.mode);
+    if (step.pass) passCount += 1; else failCount += 1;
+  };
   for (const t of turns) {
     const now = jstDate(date, t.at);
+    // お風呂の自動の戻り（本番は Cloud Tasks の /internal/bath-return）。予約の時刻を過ぎていれば先に戻す
+    const before = (await ctx.store.getHousehold(hh))!;
+    if (modeOf(before) === 'bath' && before.bath?.returnAt && new Date(before.bath.returnAt).getTime() <= now.getTime()) {
+      const returnAt = new Date(before.bath.returnAt);
+      const r = await handleBathReturn(ctx, hh, returnAt);
+      if (r.switched) {
+        steps.push({
+          at: hhmm(returnAt), task: 'bath', prompt: 'ゆっくり休んでくださいね', reply: null, status: 'done', say: '',
+          intents: [], notices: [], kind: 'mode', mode: modeOf(r.household), modeBy: 'system',
+        });
+      }
+    }
+    // 家族の操作としてモードを切り替える
+    if (t.mode) {
+      const r = await switchMode(ctx, hh, t.mode, 'family', now);
+      if (!t.task) {
+        const step: ReplayStep = {
+          at: t.at, task: 'bath', prompt: r.say ?? '', reply: null, status: 'done', say: '',
+          intents: [], notices: [], kind: 'mode', mode: modeOf(r.household), modeBy: 'family',
+        };
+        judge(step, t.expect, null, []);
+        steps.push(step);
+        continue;
+      }
+    }
+    if (!t.task) continue;
+    const task = t.task;
+    const reply = t.reply ?? null;
     const day = await ensureDay(ctx, hh, date);
-    const rechecking = day.tasks[t.task]?.state === 'rechecking';
-    // 痛みの聞き直し・L4 の安心文は台本の声かけとは別なので使わない
+    const rechecking = day.tasks[task]?.state === 'rechecking';
+    // 痛みの聞き直し・L4 の安心文・返事を求めない声かけ（お風呂の最初の一言など）は台本の声かけとは別なので使わない
     const queued = (await ctx.store.listPrompts(hh, date))
-      .find(p => p.task === t.task && p.state === 'queued' && !p.followup && !p.isReassurance);
-    const prompt = queued ?? await enqueuePrompt(ctx, hh, date, t.task, {
+      .find(p => p.task === task && p.state === 'queued' && !p.followup && !p.isReassurance && p.expectsReply !== false);
+    const prompt = queued ?? await enqueuePrompt(ctx, hh, date, task, {
       isRecheck: rechecking,
-      text: rechecking ? defaultPromptText(t.task, household, true) : undefined,
+      text: rechecking ? defaultPromptText(task, household, true) : undefined,
       at: now,
     });
     const delivered = await deliverPrompt(ctx, prompt, now, { synthesize: false });
     const res = await processReply(ctx, {
-      hh, date, promptId: delivered.id, replyText: t.reply, source: 'replay', now,
+      hh, date, promptId: delivered.id, replyText: reply, source: 'replay', now,
     });
 
     const status = res.turn.classified.status;
+    const after = (await ctx.store.getHousehold(hh))!;
     const step: ReplayStep = {
       at: t.at,
-      task: t.task,
+      task,
       prompt: delivered.text,
-      reply: t.reply,
+      reply,
       status,
       say: res.say,
       intents: res.intents,
       notices: res.notices.map(n => `${n.level}: ${n.reason}`),
       followUpAt: res.followUp ? hhmm(res.followUp.at) : null,
       turnId: res.turn.id,
+      kind: 'turn',
+      mode: modeOf(after),
     };
-    if (t.expect) {
-      step.expected = t.expect;
-      step.pass = judgeStep(t.expect, status, res.notices);
-      if (step.pass) passCount += 1; else failCount += 1;
-    }
+    judge(step, t.expect, status, res.notices);
     steps.push(step);
   }
 

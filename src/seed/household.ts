@@ -79,17 +79,26 @@ export function defaultHousehold(id: HouseholdId = config.defaultHouseholdId): H
       quietHours: { from: '21:30', to: '07:30' },
       // 就寝時間帯（声かけをしない・無反応判定の対象外。criteria 3-3 ★8。21:00 の声かけは含めない）
       sleepHours: { from: '21:30', to: '07:30' },
+      // 寝室モードの「ときたまの声かけ」の間隔（docs/02 §11.2。0 で無効）
+      idleChatMinutes: 90,
+      // お風呂モードの間隔（docs/02 §11.3）
+      bath: { washAfterMinutes: 10, teethAfterMinutes: 15, returnAfterMinutes: 10, recheckMinutes: 2, notifyAfterMinutes: 5 },
     },
     // 通知文に書く連絡先（家の電話・近くの人）は個人情報なのでここには書かない。家族画面の設定から入れる
     killSwitch: false,
+    // 起動モード（docs/02 §11）。切り替えは家族が iPad か家族画面から。時刻による自動切替はしない
+    mode: 'bedroom',
+    bath: null,
+    // 家族の居場所は家族画面から登録する（本人の「○○さんはどこ？」への答え）
+    whereabouts: null,
   };
 }
 
-/** 審査員向けのデモ世帯（中身は同じ計画。名前と ID だけ分ける） */
+/** 審査員向けのデモ世帯（中身は同じ計画。名前と ID だけ分ける。名前はすべて架空） */
 export function demoHousehold(): Household {
   return {
     ...defaultHousehold('hh_demo'),
     name: 'テスト世帯',
-    members: [{ id: 'mem_demo_1', name: 'テスト家族', order: 1, waitMinutes: 10 }],
+    members: [{ id: 'mem_demo_1', name: 'はなこ', order: 1, waitMinutes: 10 }],
   };
 }
