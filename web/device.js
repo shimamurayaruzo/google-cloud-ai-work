@@ -25,10 +25,11 @@
   var DRAWER_AUTOCLOSE_MS = 30000;
   var PENDING_MAX_AGE_MS = 10 * 60000;
 
+  // 次の声かけ・最後のやりとりに出す名前（src/types.ts の TASK_LABELS に合わせる）
   var TASK_LABELS = {
     greeting: '起床の挨拶', diaper: 'おむつ交換', teeth: '歯磨き', face: '洗顔', dress: '着替え',
     belongings: '持ち物', pickup: 'お迎え', lunch: '昼食', water: '水分', return: '帰宅',
-    dinner: '夕食', medicine: 'お薬', bedtime: '就寝準備', bath: '体を洗う', talk: 'おしゃべり',
+    dinner: '夕食', medicine: '服薬', bedtime: '就寝準備', bath: 'お風呂', talk: '会話',
   };
 
   // ---- 顔（紙芝居 01 の線の絵）。expression: smile / listen / think / worry ----
@@ -196,6 +197,13 @@
     var p = jstParts(d);
     return p.hour + ':' + p.minute;
   }
+  // HH:MM（JST、時も 2 桁）
+  function hhmm(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var p = jstParts(d);
+    return (p.hour < 10 ? '0' : '') + p.hour + ':' + p.minute;
+  }
   function timeWord(h) {
     if (h < 4) return '夜です';
     if (h < 10) return '朝です';
@@ -361,19 +369,23 @@
 
   function renderBath() {
     var b = st.bath || {};
-    var wash = b.washDoneAt ? 'done' : (b.washAskedAt ? 'now' : '');
-    var teeth = st.bathTeethDone ? 'done' : (b.teethAskedAt ? 'now' : '');
+    // 「上がりましたか？」まで来たら、それより前で声をかけた段は済んだ印にする
+    var exitOn = !!(b.exitAskedAt || b.exitDoneAt);
+    var wash = b.washDoneAt || (exitOn && b.washAskedAt) ? 'done' : (b.washAskedAt ? 'now' : '');
+    var teeth = st.bathTeethDone || (exitOn && b.teethAskedAt) ? 'done' : (b.teethAskedAt ? 'now' : '');
+    var exit = b.exitDoneAt ? 'done' : (b.exitAskedAt ? 'now' : '');
     $('stepWash').className = 'step ' + wash;
     $('stepTeeth').className = 'step ' + teeth;
+    $('stepExit').className = 'step ' + exit;
   }
 
   function renderNext() {
     var n = st.nextPrompt;
     var text = '';
-    // もう時刻を過ぎたもの（いま話している声かけ）は出さない
-    if (n && n.at && !isHalted() && new Date(n.at).getTime() > Date.now()) {
+    // 寝室モードだけ。もう時刻を過ぎたもの（いま話している声かけ）は出さない
+    if (st.mode === 'bedroom' && n && n.at && !isHalted() && new Date(n.at).getTime() > Date.now()) {
       var label = TASK_LABELS[n.task] || '';
-      text = '次は ' + hm(n.at) + ' に' + (label ? label : '声をかけます');
+      text = '次は ' + hhmm(n.at) + ' に ' + (label ? label : '声をかけます');
     }
     $('nextLine').textContent = text;
     renderDrawer();
@@ -700,6 +712,7 @@
       noteLast(p.task, text ? 'お返事がありました' : 'お返事はありませんでした');
       if (st.mode === 'bath') refreshMode(); // お風呂の進み具合をすぐ合わせる
       if (p.task === 'teeth' && st.mode === 'bath' && text) { st.bathTeethDone = true; renderBath(); }
+      if (r) noteFollowUp(r.followUp);
       if (!r) { setFace('smile'); endActivity(text ? 8000 : 0); return; }
       setFace(r.expression || 'smile');
       if (r.say) {
@@ -769,6 +782,18 @@
     if (lingerMs === 0) showIdle();
     else if (lingerMs != null) lingerThenIdle(lingerMs);
     scheduleIdle(IDLE_RESTART_MS);
+  }
+
+  // reply の followUp（あとでもう一度聞く予定）を、heartbeat を待たずに「次は」へ反映する。
+  // heartbeat の nextPrompt の方が早ければそちらのまま（次の heartbeat でサーバーの値に揃う）
+  function noteFollowUp(f) {
+    if (!f || !f.at || isNaN(new Date(f.at).getTime())) return;
+    var at = new Date(f.at).getTime();
+    var n = st.nextPrompt;
+    var nAt = n && n.at ? new Date(n.at).getTime() : NaN;
+    if (!isNaN(nAt) && nAt > Date.now() && nAt <= at) return;
+    st.nextPrompt = { at: f.at, task: f.task };
+    renderNext();
   }
 
   function noteLast(task, what) {
@@ -900,7 +925,7 @@
   }
 
   // お風呂の進み具合（サーバーの bath を待たずに、届いた声かけで先に印を付ける）。
-  // bathStep: start / wash / wash_recheck / teeth / end（src/api/README.md 6 節）
+  // bathStep: start / wash / wash_recheck / teeth / exit / end（src/api/README.md 6 節）
   function noteBathPrompt(p) {
     if (st.mode !== 'bath') return;
     var b = st.bath || {};
@@ -911,6 +936,11 @@
     } else if (step === 'teeth') {
       if (!b.washDoneAt) b.washDoneAt = now;
       if (!b.teethAskedAt) b.teethAskedAt = now;
+    } else if (step === 'exit') {
+      // 「お風呂から上がりましたか？」（再確認も exit）。洗い始め・歯磨きはもう過ぎている
+      if (!b.washDoneAt && b.washAskedAt) b.washDoneAt = now;
+      if (b.teethAskedAt) st.bathTeethDone = true;
+      if (!b.exitAskedAt) b.exitAskedAt = now;
     } else if (step === 'end') {
       if (!b.washDoneAt) b.washDoneAt = now;
       st.bathTeethDone = true;
