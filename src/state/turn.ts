@@ -286,6 +286,7 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
       oneShot: isPromptTask && item?.recheckMinutes === 0,
       promptedAt: prompt.deliveredAt ?? prompt.scheduledAt,
       task: r.task,
+      noAnswerUrgent: household.policy.noAnswerUrgent !== false,
     });
     tasks[r.task] = result.next;
     await ctx.store.setTask(hh, date, r.task, result.next);

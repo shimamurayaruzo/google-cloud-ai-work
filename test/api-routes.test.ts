@@ -370,7 +370,7 @@ test('端から端まで: 計画 → 承認 → 声かけ → 返事 → 今日�
   const { defaultHousehold } = await import('../src/seed/household.js');
   const store = new MemoryStore();
   await store.putHousehold(defaultHousehold('hh_test'));
-  let now = new Date('2026-09-29T06:00:00+09:00'); // 火曜（デイの日）
+  let now = new Date('2026-09-30T06:00:00+09:00'); // 水曜（デイの日）
   const { ctx } = createFakeContext({ store, clock: () => now });
   const router = createRouter!(ctx);
   const internal = { 'X-Internal-Token': 'internal-token-xyz', 'content-type': 'application/json' };
@@ -379,18 +379,18 @@ test('端から端まで: 計画 → 承認 → 声かけ → 返事 → 今日�
 
   const plan = await call(router, mockReq({ method: 'POST', path: '/internal/plan', headers: internal, body: {} }));
   assert.equal(plan.status, 200, plan.text);
-  assert.equal(plan.json.date, '2026-09-29');
+  assert.equal(plan.json.date, '2026-09-30');
   assert.equal(plan.json.isDayservice, true);
   assert.ok(plan.json.prompts.length > 0);
 
   const getPlan = await call(router, mockReq({ path: '/api/family/plan', headers: fam }));
   assert.equal(getPlan.status, 200);
   assert.equal(getPlan.json.planApproved, null);
-  const approve = await call(router, mockReq({ method: 'POST', path: '/api/family/plan/approve', headers: fam, body: { date: '2026-09-29' } }));
+  const approve = await call(router, mockReq({ method: 'POST', path: '/api/family/plan/approve', headers: fam, body: { date: '2026-09-30' } }));
   assert.equal(approve.status, 200, approve.text);
   assert.equal(approve.json.planApproved.by, 'family');
 
-  now = new Date('2026-09-29T08:00:30+09:00');
+  now = new Date('2026-09-30T08:00:30+09:00');
   const hb = await call(router, mockReq({ method: 'POST', path: '/api/device/heartbeat', headers: dev, body: { hh: 'hh_test', appVersion: 't' } }));
   assert.equal(hb.status, 200);
   assert.ok(hb.json.nextPrompt);
@@ -400,7 +400,7 @@ test('端から端まで: 計画 → 承認 → 声かけ → 返事 → 今日�
   assert.equal(next.json.prompt.task, 'greeting');
   assert.ok(next.json.prompt.text);
 
-  now = new Date('2026-09-29T08:01:00+09:00');
+  now = new Date('2026-09-30T08:01:00+09:00');
   const reply = await call(router, mockReq({ method: 'POST', path: '/api/device/reply', headers: dev, body: { hh: 'hh_test', promptId: next.json.prompt.id, text: 'うん、まあまあ', source: 'ipad' } }));
   assert.equal(reply.status, 200, reply.text);
   assert.match(reply.json.turnId, /^tn_/);
@@ -434,15 +434,18 @@ test('端から端まで: 計画 → 承認 → 声かけ → 返事 → 今日�
 
   const scen = await call(router, mockReq({ path: '/api/family/replay/scenarios', headers: fam }));
   assert.ok(scen.json.names.includes('dayservice-day'));
-  const turnsBefore = (await store.listTurns('hh_test', '2026-09-29')).length;
-  const ledgerBefore = (await store.listLedger('hh_test', '2026-09-29')).length;
+  const turnsBefore = (await store.listTurns('hh_test', '2026-09-30')).length;
+  const ledgerBefore = (await store.listLedger('hh_test', '2026-09-30')).length;
   const replay = await call(router, mockReq({ method: 'POST', path: '/api/family/replay', headers: fam, body: { name: 'dayservice-day' } }));
   assert.equal(replay.status, 200, replay.text);
   assert.ok(replay.json.steps.length > 0);
   assert.equal(typeof replay.json.passCount, 'number');
   // 再生は本番の store に何も書かない
-  assert.equal((await store.listTurns('hh_test', '2026-09-29')).length, turnsBefore);
-  assert.equal((await store.listLedger('hh_test', '2026-09-29')).length, ledgerBefore);
+  assert.equal((await store.listTurns('hh_test', '2026-09-30')).length, turnsBefore);
+  assert.equal((await store.listLedger('hh_test', '2026-09-30')).length, ledgerBefore);
+  // 台本 dayservice-day の日付（2026-09-29）にも書かない
+  assert.equal((await store.listTurns('hh_test', '2026-09-29')).length, 0);
+  assert.equal((await store.listLedger('hh_test', '2026-09-29')).length, 0);
 
   const badName = await call(router, mockReq({ method: 'POST', path: '/api/family/replay', headers: fam, body: { name: '../secret' } }));
   assert.equal(badName.status, 400);

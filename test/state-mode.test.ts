@@ -17,7 +17,7 @@ import { L4_SAY, RulesTurnRunner } from '../src/agent/rules.js';
 
 const HH = 'hh_m';
 const THU = '2026-10-01';   // デイ以外の日
-const TUE = '2026-09-29';   // デイの日
+const WED = '2026-09-30';   // デイの日（水曜）
 
 async function setup(date = THU) {
   const store = new MemoryStore();
@@ -461,8 +461,8 @@ test('ときたまの声かけ: 計画の声かけが前後 45 分にある・�
   await off.store.updateHousehold(HH, { policy: { ...h.policy, idleChatMinutes: 0 } });
   assert.equal(await nextPrompt(off.ctx, HH, at('13:50')), null);
 
-  const tue = await setup(TUE);
-  assert.equal(await nextPrompt(tue.ctx, HH, at('13:00', TUE)), null);   // デイで不在（9:00 お迎え〜16:00 帰宅）
+  const wed = await setup(WED);
+  assert.equal(await nextPrompt(wed.ctx, HH, at('13:00', WED)), null);   // デイで不在（9:00 お迎え〜16:00 帰宅）
 
   const bath = await setup();
   await switchMode(bath.ctx, HH, 'bath', 'family', at('13:00'));
