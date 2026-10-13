@@ -156,7 +156,10 @@ export function painFollowupText(p: PainHit): string {
 // ---------------------------------------------------------------------------
 
 /** 外部（家族以外を含む）への連絡の依頼 */
-const CONTACT_REQUEST = /(電話|でんわ|連絡|れんらく)[^。！？!?]{0,6}?(して|かけて|ちょうだい|頂戴|ください|頼む|たのむ)|呼んで|よんで/;
+/** 外部（家族以外を含む）への連絡の依頼（「電話して」「連絡して」「呼んで」「伝えて」）。docs/02 §4 の call_outside 相当で、常にしない */
+const CONTACT_REQUEST = /(電話|でんわ|連絡|れんらく)[^。！？!?]{0,6}?(して|かけて|ちょうだい|頂戴|ください|頼む|たのむ)|呼んで|よんで|(伝え|つたえ)て(ほしい|欲しい|ちょうだい|頂戴|ください|くれ(?!て)|おいて|$|[。！？!?、よねなお])/;
+/** 誰に連絡してほしいか（「ケアマネさんに伝えて」の「ケアマネさん」） */
+const CONTACT_WHO = /([^\s、。！？!?「」]{1,10}?)(さん|ちゃん)?(に|へ)[^。！？!?]{0,4}?(伝え|つたえ|連絡|れんらく|電話|でんわ)/;
 
 const NOT_YET = /まだ|あとで|後で|これから|今から|いまから|待って|まって|(て|で)(い)?ない|いらない|要らない|いいえ|後にする|あとにする/;
 
@@ -176,6 +179,10 @@ const TASK_DONE: Record<TaskKey, string[]> = {
   dinner: ['食べた', 'たべた', '食べました', 'いただいた'],
   medicine: ['飲んだ', 'のんだ', '飲みました'],
   bedtime: ['おやすみ', '寝る', '寝ます', 'ねる', '磨いた', '替えた'],
+  // お風呂モードの「そろそろ体を洗いましょうか」（docs/02 §11.3）
+  bath: ['洗う', '洗います', '洗った', 'あらう', 'あらった', '洗ってる', '洗っている', 'そうする', 'そうします'],
+  // 会話（ときたまの声かけ）は済み・まだを決めない
+  talk: [],
 };
 
 /** 何か返事があれば「済み」としてよい項目（起床の挨拶・帰宅は返事そのものが確認になる） */
@@ -227,7 +234,7 @@ export function analyzeReply(task: TaskKey, replyText: string | null, household:
 
   // 入力を疑う: 本人の発話か分からないものは判定しない
   if (NOISE_MARKER.test(text) || BROADCAST_TONE.test(text)) {
-    return { ...base, status: 'unclear', note: '本人の発話か分からない（テレビ・来客・雑音の可能性）' };
+    return { ...base, status: 'unclear', note: '本人の声か分からない（テレビ・来客・雑音の可能性）' };
   }
 
   // 服薬の質問: 決めた言葉で答えるだけ。まだ飲んでいないので not_yet
@@ -320,10 +327,12 @@ function doneSay(task: TaskKey, h: Household): string {
     case 'dinner': return 'よかったです。ごちそうさまでした。';
     case 'medicine': return 'お薬、飲めましたね。ありがとうございます。';
     case 'bedtime': return 'おやすみなさい。ゆっくり休んでくださいね。';
+    case 'bath': return 'ゆっくりどうぞ。';
+    case 'talk': return 'はい、聞いていますよ。';
   }
 }
 
-const PAIN_SAY = 'それはつらいですね。無理をしないでくださいね。';
+export const PAIN_SAY = 'それはつらいですね。無理をしないでくださいね。';
 
 /**
  * 規則で決めた一言（LLM の最終テキストが無いときにも使う）。
@@ -343,7 +352,7 @@ export function fixedSay(status: Classification, task: TaskKey, household: House
     case 'unclear': s = 'また後で声をかけますね。'; break;
   }
   // 本人からの依頼への断り（criteria 3-5）。催促ではないので家族の名前を出してよい
-  if (opts.contactRequest) s = 'ご家族に伝えておきますね。' + (status === 'done' ? s : '');
+  if (opts.contactRequest) s = CONTACT_SAY + (status === 'done' ? s : '');
   return s;
 }
 
@@ -378,7 +387,31 @@ export function ruleRecord(input: TurnInput, a?: ReplyAnalysis): Extract<Intent,
   return { type: 'record', task: input.prompt.task, status: r.status, note: r.note, confidence: rulesConfidence(r.status) };
 }
 
-const CONTACT_REASON = '本人から外部への連絡を頼まれました（こちらからは連絡していません）';
+export const CONTACT_REASON = '本人から外部への連絡を頼まれました（こちらからは連絡していません）';
+/** 本人に頼まれた外部連絡への一言（自分では連絡しない。criteria 3-5） */
+export const CONTACT_SAY = 'ご家族に伝えておきますね。';
+
+/** 外部連絡の依頼の通知の理由。「○○に伝えてほしいと頼まれました（こちらからは連絡していません）」 */
+export function contactReason(text: string | null | undefined): string {
+  const m = text ? CONTACT_WHO.exec(text) : null;
+  if (!m) return CONTACT_REASON;
+  const verb = /電話|でんわ/.test(m[4]) ? '電話してほしい' : /連絡|れんらく/.test(m[4]) ? '連絡してほしい' : '伝えてほしい';
+  return `${m[1]}${m[2] ?? ''}に${verb}と頼まれました（こちらからは連絡していません）`;
+}
+
+/**
+ * 家族への通知の理由の言い回しを会話調に揃える（report-design 0 節:「訴え」「発話」「発言」は使わない）。
+ * LLM が道具に書いた理由（例「転倒の訴えがありました」）にかける最後の守り
+ */
+export function familyWording(reason: string): string {
+  return reason
+    .replace(/(転倒|転んだこと)の訴えが?(ありました|あります)?/g, '転んだとおっしゃいました')
+    .replace(/痛みの訴えが?(ありました|あります)?/g, '痛いとおっしゃいました')
+    .replace(/の訴えが(ありました|あります)/g, 'についてお話がありました')
+    .replace(/を訴え(ました|ています|た)/g, 'とおっしゃいました')
+    .replace(/訴え/g, 'お話')
+    .replace(/発話|発言/g, 'お言葉');
+}
 const DEPARTURE_REASON = '準備完了、デイへ出発';
 
 /** お迎えが来て出発したら家族へ info で短く知らせる（docs/03 §4、docs/01 §5.1）。urgent/check があるときは足さない */
@@ -413,7 +446,7 @@ export function buildRulesOutcome(input: TurnInput, startedAt = Date.now()): Tur
   if (a.l4) intents.push(l4Intent(input, a.l4));
   else if (a.pain) intents.push(painNotify(input, a.pain), painFollowup(input, a.pain));
   if (a.contactRequest) {
-    intents.push({ type: 'notify', level: 'check', reason: CONTACT_REASON, evidence: excerpt(input.replyText, 40), origin: 'contact' });
+    intents.push({ type: 'notify', level: 'check', reason: contactReason(input.replyText), evidence: excerpt(input.replyText, 40), origin: 'contact' });
   }
   if (wantsDepartureNotice(task, a.status, urgent || Boolean(a.pain) || a.contactRequest)) {
     intents.push({ type: 'notify', level: 'info', reason: DEPARTURE_REASON, evidence: excerpt(input.replyText, 40), origin: 'departure' });
@@ -539,6 +572,11 @@ export function postProcess(outcome: TurnOutcome, input: TurnInput): TurnOutcome
         }
         if (!n.origin) n = { ...n, origin: inferOrigin(n, analysis, task) };
         if (analysis.l4 && n.origin === 'pain') break;   // L4 を優先し、痛みの check を重ねない
+        // 理由は規則で決まるものは規則の文に揃え、それ以外も会話調にする（LLM の「転倒の訴えがありました」等を残さない）
+        if ((n.origin === 'l4_words' || n.origin === 'fire') && analysis.l4) n = { ...n, reason: l4Reason(analysis.l4) };
+        else if (n.origin === 'pain' && analysis.pain) n = { ...n, reason: painReason(analysis.pain) };
+        else if (n.origin === 'contact') n = { ...n, reason: contactReason(input.replyText) };
+        else n = { ...n, reason: familyWording(n.reason) };
         pushNotify(n);
         break;
       }
@@ -561,7 +599,7 @@ export function postProcess(outcome: TurnOutcome, input: TurnInput): TurnOutcome
     followup = painFollowup(input, analysis.pain);
   }
   if (analysis.contactRequest && !keys.has('check:contact')) {
-    pushNotify({ type: 'notify', level: 'check', reason: CONTACT_REASON, evidence: excerpt(input.replyText, 40), origin: 'contact' });
+    pushNotify({ type: 'notify', level: 'check', reason: contactReason(input.replyText), evidence: excerpt(input.replyText, 40), origin: 'contact' });
   }
   if (!hasLevel('info') && wantsDepartureNotice(task, record.status, hasLevel('urgent') || hasLevel('check'))) {
     pushNotify({ type: 'notify', level: 'info', reason: DEPARTURE_REASON, evidence: excerpt(input.replyText, 40), origin: 'departure' });
@@ -596,9 +634,11 @@ export function postProcess(outcome: TurnOutcome, input: TurnInput): TurnOutcome
   }
 
   let say = sanitizeSay(outcome.say ?? '');
+  // 本人に頼まれた外部連絡: 自分では連絡しないので「かしこまりました」等で終えず、家族に伝えると返す（criteria 3-5）
+  const declinesContact = /家族[^。]{0,8}(伝え|お伝え|知らせ)|連絡(は)?でき(ない|ません)/.test(say);
   if (urgent) {
     say = L4_SAY;
-  } else if (!say || (TELLS_FAMILY_NOTICE.test(say) && !analysis.contactRequest)) {
+  } else if (!say || (TELLS_FAMILY_NOTICE.test(say) && !analysis.contactRequest) || (analysis.contactRequest && !declinesContact)) {
     say = fixedSay(record.status, task, input.household, {
       recheck: Boolean(recheck), urgent, contactRequest: analysis.contactRequest, medicineAnswer: analysis.medicineAnswer,
       pain: Boolean(analysis.pain),

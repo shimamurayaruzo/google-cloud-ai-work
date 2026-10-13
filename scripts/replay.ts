@@ -68,8 +68,15 @@ for (const file of files) {
   console.log(`\n== ${scenario.name ?? path.basename(file)}（${scenario.date}、${scenario.isDayservice ? 'デイの日' : 'デイ以外'}、runner=${label}）`);
   console.log(`${cell('時刻', 6)}${cell('項目', 12)}${cell('返事', 26)}${cell('判定', 10)}${cell('期待', 16)}${cell('結果', 6)}${cell('再確認', 7)}通知 / 一言`);
   for (const s of result.steps) {
-    const expected = s.expected ? `${s.expected.status}${s.expected.notify ? `+${s.expected.notify}` : ''}` : '-';
+    const e = s.expected;
+    const expected = e ? [e.status, e.notify ? `+${e.notify}` : '', e.mode ? `@${e.mode}` : ''].filter(Boolean).join('') : '-';
     const mark = s.pass === undefined ? '-' : s.pass ? 'OK' : 'NG';
+    if (s.kind === 'mode') {
+      // 起動モードの切替（docs/02 §11）。家族の操作か、お風呂の自動の戻り
+      const who = s.modeBy === 'system' ? '自動で戻る' : '家族が切替';
+      console.log(`${cell(s.at, 6)}${cell('（モード）', 12)}${cell(`→ ${s.mode}（${who}）`, 26)}${cell('', 10)}${cell(expected, 16)}${cell(mark, 6)}${cell('', 7)}${s.prompt ? `積んだ一言「${s.prompt}」` : ''}`);
+      continue;
+    }
     const extra = [...s.notices, `「${s.say}」`].join(' / ');
     console.log(`${cell(s.at, 6)}${cell(s.task, 12)}${cell(s.reply ?? '（返事なし）', 26)}${cell(s.status, 10)}${cell(expected, 16)}${cell(mark, 6)}${cell(s.followUpAt ?? '', 7)}${extra}`);
   }

@@ -53,6 +53,14 @@ export async function currentL4(
   const notice = await ctx.store.getNotice(hh, l4.noticeId);
   if (notice && notice.state !== 'acked' && notice.state !== 'closed') return l4;
 
+  await clearL4(ctx, hh, date, l4, notice, now);
+  return null;
+}
+
+/** L4 を下ろす（台帳 l4_cleared）。L4 の間に期限が来た声かけは話さずに expired にする */
+async function clearL4(
+  ctx: Pick<AppContext, 'store'>, hh: HouseholdId, date: DateKey, l4: DayL4, notice: Notice | null, now: Date,
+): Promise<void> {
   await ctx.store.updateDay(hh, date, { l4: null });
   let expired = 0;
   for (const p of await ctx.store.listDuePrompts(hh, date, now)) {
@@ -64,7 +72,21 @@ export async function currentL4(
     args: { ackedBy: notice?.ackedBy ?? null, falseAlarm: notice?.falseAlarm ?? false, expiredPrompts: expired },
   });
   logEvent('l4_cleared', { hh, date, noticeId: l4.noticeId, falseAlarm: notice?.falseAlarm ?? false });
-  return null;
+}
+
+/**
+ * 家族が「確認した」（「誤報だった」を含む）を押した直後に呼ぶ。その通知が L4 を立てたものなら、その場で L4 を下ろす
+ * （nextPrompt 側の解除は保険として残る）。下ろしたら true
+ */
+export async function clearL4ForNotice(
+  ctx: Pick<AppContext, 'store'>, hh: HouseholdId, noticeId: string, now: Date,
+): Promise<boolean> {
+  const notice = await ctx.store.getNotice(hh, noticeId);
+  if (!notice || (notice.state !== 'acked' && notice.state !== 'closed')) return false;
+  const day = await ctx.store.getDay(hh, notice.date);
+  if (!day?.l4 || day.l4.noticeId !== noticeId) return false;
+  await clearL4(ctx, hh, notice.date, day.l4, notice, now);
+  return true;
 }
 
 /** 次の安心文を流してよいか（L4 を立てた時刻、または直近の安心文から 3 分以上） */

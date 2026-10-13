@@ -122,7 +122,10 @@ export interface FamilyNotify {
 // 時刻の予約（tasks/）
 // ---------------------------------------------------------------------------
 
-export type InternalPath = '/internal/prompt' | '/internal/recheck' | '/internal/escalate' | '/internal/summary' | '/internal/health' | '/internal/plan';
+export type InternalPath =
+  | '/internal/prompt' | '/internal/recheck' | '/internal/escalate' | '/internal/summary' | '/internal/health' | '/internal/plan'
+  /** お風呂モードから寝室へ自動で戻す（docs/02 §11.3） */
+  | '/internal/bath-return';
 
 export interface ScheduledTask { id: string; path: InternalPath; runAt: Date }
 

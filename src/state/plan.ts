@@ -58,6 +58,8 @@ export function defaultPromptText(task: TaskKey, household: Household, isRecheck
       dinner: '夕ご飯、食べられましたか？',
       medicine: 'お薬、飲めましたか？',
       bedtime: 'そろそろお休みの準備はできましたか？',
+      bath: '体を洗えそうですか？',
+      talk: 'お変わりありませんか？',
     };
     return recheck[task];
   }
@@ -75,6 +77,8 @@ export function defaultPromptText(task: TaskKey, household: Household, isRecheck
     dinner: '夕ご飯は食べましたか？',
     medicine: `ご飯のあとのお薬を飲みましょう。${place}に${count ? ` ${count}` : ''}あります`,
     bedtime: '歯を磨いて、そろそろお休みしましょう',
+    bath: 'そろそろ体を洗いましょうか',
+    talk: 'お水を一口どうですか',
   };
   return first[task];
 }

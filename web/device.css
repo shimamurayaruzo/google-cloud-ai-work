@@ -1,0 +1,173 @@
+/* 見守り（母側）— iPad Pro 12.9 横置き（1366×1024）。紙芝居 01・02 の見た目に合わせる。
+   画面は 1366:1024 の箱に収め、文字や余白はその箱の幅（cqw）で決める。PC の Chrome でも同じ比率で縮む。 */
+
+:root {
+  --skin: #ffe6c4; --cheek: #f4b4a2; --eye: #3b3330;
+  --room: #fbf7ef;          /* 寝室 */
+  --ink: #2f2a24; --ink-2: #5d5246; --ink-3: #8a7a62; --ink-4: #a3957f;
+  --edge: #e3d8c6; --edge-2: #c9bfae; --fam: #6b5b45;
+  --ok: #3d7f6c; --ok-soft: #e2f0ea; --ok-ring: #9fd0bf;
+  --warn: #b4443c;
+  --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+body.mode-bath {
+  --room: #f2f7f6;          /* お風呂（脱衣所）。白地に濃い字 */
+  --ink: #1f2a27; --ink-2: #3f5550; --ink-3: #557069; --ink-4: #7f9590;
+  --edge: #cddcd8; --edge-2: #bccfca; --fam: #4f6a63;
+  --ok: #2f7a66; --ok-soft: #dff0ea;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--room); color: var(--ink); font-family: var(--font);
+  line-height: 1.6; overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color .4s;
+}
+[hidden] { display: none !important; }
+button { font: inherit; -webkit-tap-highlight-color: transparent; }
+
+/* 1366:1024 の箱。はみ出さないよう画面の短い方に合わせる */
+.screen {
+  position: relative; margin: 0 auto;
+  width: min(100vw, calc(100vh * 1366 / 1024));
+  height: min(100vh, calc(100vw * 1024 / 1366));
+  top: max(0px, calc((100vh - 100vw * 1024 / 1366) / 2));
+  container-type: inline-size; overflow: hidden; background: var(--room);
+  transition: background-color .4s;
+}
+@supports (height: 100dvh) {
+  .screen {
+    width: min(100vw, calc(100dvh * 1366 / 1024));
+    height: min(100dvh, calc(100vw * 1024 / 1366));
+    top: max(0px, calc((100dvh - 100vw * 1024 / 1366) / 2));
+  }
+}
+.scr { position: absolute; inset: 0; display: grid; grid-template-columns: 40% 60%; grid-template-rows: auto 1fr auto; }
+body.mode-bath .scr { grid-template-columns: 32% 68%; }
+
+/* ---- 上：小さな時計（寝室）／お風呂の進み具合、右に家族用の操作 ---- */
+.top { grid-column: 1 / 3; display: flex; justify-content: space-between; align-items: flex-start; gap: 2cqw; padding: 2.2cqw 2.6cqw 0; }
+.clock-small { color: var(--fam); line-height: 1.25; min-height: 5.8cqw; }
+.clock-small .d { font-size: 2.3cqw; font-weight: 700; }
+.clock-small .t { font-size: 2.3cqw; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+body.idle .clock-small { visibility: hidden; }           /* 合間は大きな時計を出すので小さい方は隠す */
+.steps { display: none; gap: 1cqw; align-items: center; }
+body.mode-bath .steps { display: flex; }
+body.mode-bath .clock-small { display: none; }
+.step { display: flex; align-items: center; gap: .6cqw; font-size: 2cqw; color: var(--ink-4); border: .18cqw solid var(--edge); border-radius: 99px; padding: .4cqw 1.6cqw; background: #fff; }
+.step i { width: 1.6cqw; height: 1.6cqw; border-radius: 50%; border: .2cqw solid #b9cdc8; display: inline-block; }
+.step.done { color: #2f6f5e; border-color: #a9cfc3; }
+.step.done i { background: #7cbca8; border-color: #7cbca8; }
+.step.now { color: #2a2f2d; border-color: #e0a526; font-weight: 700; }
+.step.now i { background: #ffe3a3; border-color: #e0a526; }
+.arrow { font-size: 1.6cqw; color: #b9cdc8; }
+
+.fam { display: flex; gap: .7cqw; align-items: center; opacity: .5; transition: opacity .2s; flex-wrap: wrap; justify-content: flex-end; }
+.fam:hover, .fam:focus-within, .fam.awake { opacity: 1; }
+.fam .lbl { font-size: 1.05cqw; color: var(--ink-3); margin-right: .2cqw; }
+.fam .seg { display: flex; border: 1px solid var(--edge-2); border-radius: 99px; overflow: hidden; }
+.fam button { font-size: 1.3cqw; padding: .7cqw 1.4cqw; border: 0; background: transparent; color: var(--fam); cursor: pointer; line-height: 1.3; }
+.fam .seg button.on { background: var(--fam); color: #fff; }
+.fam .solo { border: 1px solid var(--edge-2); border-radius: 99px; }
+.fam button:disabled { opacity: .45; cursor: default; }
+.fam .solo.on { background: var(--fam); color: #fff; }
+
+/* ---- 顔 ---- */
+.facebox { grid-column: 1; grid-row: 2; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.face { width: 34cqw; height: 34cqw; transition: transform .3s, width .3s, height .3s; }
+body.mode-bath .face { width: 25cqw; height: 25cqw; }
+.face.tilt { transform: rotate(-5deg); }
+
+/* ---- 字幕 ---- */
+.talk { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; justify-content: center; padding: 0 3.4cqw 0 1cqw; gap: 1.6cqw; min-height: 0; overflow: hidden; }
+body.mode-bath .talk { padding: 0 3cqw 0 1cqw; gap: 2cqw; }
+
+.reply { align-self: flex-start; background: #fff; border: 1px solid var(--edge); border-radius: 2cqw; padding: 1cqw 1.8cqw; font-size: 2.4cqw; color: var(--ink-2); max-width: 100%; overflow-wrap: anywhere; }
+.reply small { display: block; font-size: 1.1cqw; color: var(--ink-4); margin-bottom: .2cqw; }
+body.mode-bath .reply { font-size: 3.2cqw; padding: 1cqw 2cqw; }
+body.mode-bath .reply small { font-size: 1.2cqw; }
+
+.say { font-size: 3.8cqw; line-height: 1.45; font-weight: 700; color: var(--ink); letter-spacing: .02em; line-break: strict; overflow-wrap: anywhere; word-break: auto-phrase; /* Chrome は文節で折る。Safari は無視 */ }
+.say > span { display: block; }
+.say.long { font-size: 3.2cqw; }
+.say.longer { font-size: 2.7cqw; }
+.say.dim { font-size: 3cqw; color: #7d705f; font-weight: 400; }
+body.mode-bath .say { font-size: 6.4cqw; line-height: 1.35; letter-spacing: .03em; }
+body.mode-bath .say.long { font-size: 5cqw; }
+body.mode-bath .say.longer { font-size: 4cqw; }
+body.mode-bath .say.longest { font-size: 3.3cqw; }
+body.mode-bath .say.dim { font-size: 4.2cqw; color: #6c827c; }
+.sub { font-size: 2.3cqw; color: var(--ink-3); }
+body.mode-bath .sub { font-size: 3cqw; }
+
+.listen { display: flex; align-items: center; gap: 1.2cqw; font-size: 2.1cqw; color: var(--ok); }
+.listen .mic { width: 4.6cqw; height: 4.6cqw; border-radius: 50%; background: var(--ok-soft); display: grid; place-items: center; position: relative; flex: none; }
+.listen .mic::after { content: ""; position: absolute; inset: -.6cqw; border-radius: 50%; border: .35cqw solid var(--ok-ring); animation: pulse 1.6s ease-out infinite; }
+.listen svg { width: 2.4cqw; height: 2.4cqw; fill: var(--ok); stroke: var(--ok); }
+.listen svg rect { stroke: none; }
+body.mode-bath .listen { font-size: 2.8cqw; gap: 1.4cqw; }
+body.mode-bath .listen .mic { width: 6cqw; height: 6cqw; }
+body.mode-bath .listen svg { width: 3cqw; height: 3cqw; }
+@keyframes pulse { 0% { transform: scale(.85); opacity: 1; } 100% { transform: scale(1.35); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .listen .mic::after { animation: none; opacity: .6; } }
+
+/* 合間の時計（曜日をよく聞かれるので大きく） */
+.clock-view { display: flex; flex-direction: column; gap: .4cqw; }
+.big-day { font-size: 4.2cqw; font-weight: 700; color: var(--fam); }
+.big-clock { font-size: 9cqw; font-weight: 700; color: #4f4536; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.clock-view .soft { font-size: 2.3cqw; color: var(--ink-3); }
+body.mode-bath .big-day { font-size: 4.6cqw; color: var(--fam); }
+body.mode-bath .big-clock { font-size: 10cqw; color: #2f4540; }
+body.mode-bath .clock-view .soft { font-size: 3cqw; }
+
+/* ---- 下：次の声かけ（寝室）／安全確認ではない注記（お風呂）、右に状態 ---- */
+.bottom { grid-column: 1 / 3; display: flex; justify-content: space-between; align-items: flex-end; gap: 2cqw; padding: 0 2.6cqw 1.8cqw; }
+.bottom-left { min-width: 0; }
+.next-line { font-size: 1.7cqw; color: var(--ink-3); }
+.notice { display: none; font-size: 1.25cqw; color: var(--ink-4); border-top: 1px solid #d6e3e0; padding-top: .5cqw; }
+body.mode-bath .notice { display: block; }
+body.mode-bath .next-line { display: none; }
+.state { font-size: 1.05cqw; color: var(--ink-4); display: flex; gap: 1.4cqw; white-space: nowrap; flex-wrap: wrap; justify-content: flex-end; }
+.state .on { color: var(--ok); }
+.state .bad { color: var(--warn); }
+
+/* 止めているとき：上の細い帯（ご家族にだけ分かる印） */
+.paused-band { position: absolute; left: 0; right: 0; top: 0; height: .7cqw; background: var(--edge-2); z-index: 2; }
+
+/* ---- 今日の予定（ご家族用のドロワー） ---- */
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 36cqw; background: #fff; border-left: 1px solid var(--edge); box-shadow: -6px 0 20px rgba(0,0,0,.08); padding: 2.4cqw 2.2cqw; font-size: 1.4cqw; color: #4a4136; overflow: auto; z-index: 5; -webkit-user-select: text; user-select: text; }
+.drawer h2 { font-size: 1.9cqw; margin: 0 0 .3cqw; }
+.drawer .dsub { font-size: 1.1cqw; color: var(--ink-4); margin-bottom: 1.4cqw; }
+.drawer .close { position: absolute; right: 1.6cqw; top: 1.6cqw; font-size: 1.2cqw; border: 1px solid var(--edge); background: #fff; border-radius: 99px; padding: .4cqw 1.2cqw; cursor: pointer; color: var(--ink-3); }
+.dl { margin: 0; }
+.dl dt { font-size: 1.1cqw; color: var(--ink-3); margin-top: 1.1cqw; }
+.dl dd { margin: .2cqw 0 0; font-size: 1.6cqw; color: var(--ink); overflow-wrap: anywhere; }
+.dnote { font-size: 1.15cqw; color: var(--ink-3); margin: 1.8cqw 0 1.2cqw; }
+.dactions { display: flex; flex-direction: column; gap: .8cqw; align-items: flex-start; }
+.dactions button { font-size: 1.2cqw; border: 1px solid var(--edge-2); background: #fff; color: var(--fam); border-radius: 99px; padding: .5cqw 1.4cqw; cursor: pointer; }
+
+/* ---- 文字で入れる欄（マイクが使えないとき） ---- */
+.textbar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 4.6cqw; width: min(70cqw, 94%); display: flex; gap: .8cqw; background: #fff; border: 1px solid var(--edge); border-radius: 1.4cqw; padding: .8cqw; box-shadow: 0 4px 16px rgba(0,0,0,.08); z-index: 4; }
+.textbar input { flex: 1; min-width: 0; font: inherit; font-size: max(16px, 1.6cqw); padding: .6cqw 1cqw; border: 1px solid var(--edge-2); border-radius: .8cqw; color: var(--ink); background: #fff; -webkit-user-select: text; user-select: text; }
+.textbar button { font-size: max(14px, 1.4cqw); padding: .5cqw 1.4cqw; border-radius: .8cqw; border: 1px solid var(--fam); background: var(--fam); color: #fff; cursor: pointer; white-space: nowrap; }
+.textbar button.ghost { background: transparent; color: var(--fam); border-color: var(--edge-2); }
+.textbar button:disabled { opacity: .4; cursor: default; }
+
+/* ---- 設定と「はじめる」 ---- */
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: var(--room); z-index: 10; padding: 2cqw; }
+.start-card { width: min(46cqw, 100%); text-align: center; }
+.start-card h1 { font-size: 2.6cqw; color: var(--fam); margin: 0 0 2.4cqw; font-weight: 700; letter-spacing: .04em; }
+.start-btn { font-size: 4.6cqw; font-weight: 700; padding: 2.4cqw 7cqw; border-radius: 99px; border: 0; background: var(--ok); color: #fff; cursor: pointer; box-shadow: 0 6px 18px rgba(61,127,108,.25); }
+.start-btn:active { transform: translateY(1px); }
+.hint { font-size: max(13px, 1.4cqw); color: var(--ink-3); margin: 2cqw 0 0; line-height: 1.7; }
+.small { font-size: max(12px, 1.15cqw); margin: 1.6cqw 0 0; }
+.linkish { border: 0; background: none; color: var(--fam); text-decoration: underline; cursor: pointer; font-size: inherit; padding: 0; }
+.setup { text-align: left; display: flex; flex-direction: column; gap: .5cqw; }
+.setup .hint { margin: 0 0 1cqw; }
+.setup label { font-size: max(13px, 1.3cqw); color: var(--ink-3); margin-top: .6cqw; }
+.setup input { font: inherit; font-size: max(16px, 1.7cqw); padding: .8cqw 1.1cqw; border: 1px solid var(--edge-2); border-radius: .8cqw; background: #fff; color: var(--ink); -webkit-user-select: text; user-select: text; }
+.setup .primary { margin-top: 1.6cqw; align-self: center; font-size: max(16px, 1.8cqw); padding: .9cqw 3.2cqw; border-radius: 99px; border: 0; background: var(--fam); color: #fff; cursor: pointer; }
+.err { color: var(--warn); font-size: max(13px, 1.3cqw); margin: .6cqw 0 0; }

@@ -4,7 +4,9 @@ export type LedgerEventName =
   | 'recheck_scheduled' | 'notice_sent' | 'notice_acked' | 'notice_escalated'
   | 'approval_requested' | 'approval_decided' | 'summary_sent' | 'plan_proposed' | 'plan_approved'
   | 'kill_switch_on' | 'kill_switch_off' | 'heartbeat_lost' | 'health_incident' | 'health_recovered'
-  | 'followup_scheduled' | 'followup_skipped' | 'l4_started' | 'l4_cleared';
+  | 'followup_scheduled' | 'followup_skipped' | 'l4_started' | 'l4_cleared'
+  // docs/02 §11（起動モード・本人からの質問・ときたまの声かけ・居場所の登録）
+  | 'mode_changed' | 'utterance_received' | 'idle_chat_sent' | 'whereabouts_updated';
 
 export function logEvent(event: string, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ severity: 'INFO', event, timestamp: new Date().toISOString(), ...data }));

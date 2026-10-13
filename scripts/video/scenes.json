@@ -1,0 +1,336 @@
+{
+  "$comment": [
+    "3 分デモ動画のカット表（docs/demo-script-v2.md を機械可読にしたもの）。narration.ts・record.ts・assemble.ts が読む。",
+    "start/end/heading/narration は台本 v2 のまま。ナレーションの文言を変えるときは台本 v2 を先に直す。",
+    "kind: title | live | device | family | judge | slack | diagram。segments があるカットは、その順に画面をつなぐ（duration の合計 = end - start）。",
+    "before / after は録画の外で流す手順（データ作り・時計合わせ）。steps は録画の中の手順。",
+    "steps の do（record.ts が解釈）: clock（サーバーと開いている画面の時計を合わせて動かす）/ serverClock（サーバーだけ。sync: \"page\" で画面の時刻に戻す）/",
+    "  api（as: internal | family。save で返りを変数に。文字列の ${名前.キー} は保存した値に置き換える）/ replay（/internal/replay-into-store）/ history（過去の記録を台本で作る）/",
+    "  mark（start/end。録画のどこからどこまでを使うか。省略時は画面の準備ができた時から最後の手順まで）/ poll（母側画面の次の取り出しを今すぐ）/",
+    "  heartbeat（母側画面の生存信号を今すぐ。左下の「次は…」が変わる）/ waitText（selector に text が出るまで待つ）/ waitHidden /",
+    "  say（母側画面のマイクに本人の言葉が入ったことにする。pause ミリ秒「聞いています」を見せてから。返りの一言を読み終わるまで待つ）/",
+    "  click / select / scrollTo / wheel / wait",
+    "時刻はすべて日本時間。録画は recordOrder の順（仮想の時刻の順）に撮る。live は tmp/video/live/<区間 id かカット id>.mp4 を置くと assemble.ts が差し替える。"
+  ],
+  "output": { "width": 1920, "height": 1080, "fps": 30, "background": "#f4f6f3", "headingBand": 96, "narrationLead": 0.3, "narrationTail": 0.4, "maxSpeedup": 1.6 },
+  "viewports": {
+    "device": { "width": 1366, "height": 1024 },
+    "family": { "width": 1000, "height": 860 },
+    "judge": { "width": 1366, "height": 768 },
+    "card": { "width": 1824, "height": 948 },
+    "full": { "width": 1920, "height": 1080 }
+  },
+  "hh": "hh_demo",
+  "prepare": [
+    { "do": "clock", "at": "2026-09-01T09:00:00" },
+    {
+      "do": "api",
+      "as": "family",
+      "method": "PUT",
+      "path": "/api/family/settings",
+      "body": {
+        "members": [
+          { "id": "mem_demo_1", "name": "島村", "order": 1, "waitMinutes": 10 }
+        ],
+        "policy": { "idleChatMinutes": 0 }
+      }
+    },
+    { "do": "history", "from": "2026-09-15", "to": "2026-09-28", "dayservice": "dayservice-day", "default": "weekday" }
+  ],
+  "recordOrder": [ "c03", "c04", "c06", "c05", "c09", "c07" ],
+  "scenes": [
+    {
+      "id": "c01",
+      "start": 0,
+      "end": 12,
+      "kind": "title",
+      "heading": "",
+      "narration": "働きながら、家で認知症の家族を支えている人がいます。知りたいのは「生きているか」だけではなく、「今日はどう過ごしたか」です。",
+      "card": "title.html",
+      "steps": []
+    },
+    {
+      "id": "c02",
+      "start": 12,
+      "end": 24,
+      "kind": "live",
+      "heading": "カメラは使わない。iPad が声をかけ、次を自分で決める",
+      "narration": "カメラは使いません。母の部屋の iPad が日中に声をかけ、返答と予定から、次に何をいつ言うかを自分で決めます。",
+      "card": "live.html?title=実写 A: 母の部屋（島村さんが撮影）&sub=スタンドの iPad が声をかける。母の後ろ姿（顔は映さない）&note=スマホ横向き・15 秒・音は不要",
+      "steps": []
+    },
+    {
+      "id": "c03",
+      "start": 24,
+      "end": 50,
+      "kind": "device",
+      "heading": "朝の着替え：「まだ」なら、お迎えから逆算して聞き直す",
+      "narration": "朝の着替え。「まだ」と返ってきたら、お迎えの時刻から逆算して 10 分後に聞き直します。時刻で鳴るだけの通知ではなく、返答で次が変わります。できたことは記録され、家族には「準備完了」とだけ届きます。",
+      "before": [
+        { "do": "clock", "at": "2026-09-29T07:00:00" },
+        {
+          "do": "replay",
+          "scenario": {
+            "name": "9/29 朝（録画の前）",
+            "date": "2026-09-29",
+            "isDayservice": true,
+            "turns": [
+              { "at": "08:00", "task": "greeting", "reply": "うん、まあまあ" },
+              { "at": "08:05", "task": "diaper", "reply": "うん、替えた" },
+              { "at": "08:15", "task": "teeth", "reply": "はいはい" },
+              { "at": "08:25", "task": "face", "reply": "洗ったよ" }
+            ]
+          }
+        },
+        { "do": "api", "as": "family", "method": "PUT", "path": "/api/family/whereabouts", "body": { "place": "仕事", "backAt": "18:00" } },
+        { "do": "clock", "at": "2026-09-29T08:34:55" }
+      ],
+      "steps": [
+        { "do": "wait", "ms": 2000 },
+        { "do": "clock", "at": "2026-09-29T08:35:00" },
+        { "do": "api", "as": "internal", "method": "POST", "path": "/internal/prompt", "body": { "hh": "hh_demo", "task": "dress" }, "save": "dress1" },
+        { "do": "poll" },
+        { "do": "waitText", "selector": "#sayText", "text": "お着替えは済みましたか" },
+        { "do": "wait", "ms": 900 },
+        { "do": "say", "text": "まだ" },
+        { "do": "serverClock", "at": "2026-09-29T08:45:00" },
+        {
+          "do": "api",
+          "as": "internal",
+          "method": "POST",
+          "path": "/internal/recheck",
+          "body": { "hh": "hh_demo", "date": "2026-09-29", "task": "dress", "promptId": "${dress1.prompt.id}" }
+        },
+        { "do": "serverClock", "sync": "page" },
+        { "do": "heartbeat" },
+        { "do": "waitText", "selector": "#nextLine", "text": "8:45" },
+        { "do": "wait", "ms": 4000 },
+        { "do": "clock", "at": "2026-09-29T08:45:01" },
+        { "do": "poll" },
+        { "do": "waitText", "selector": "#sayText", "text": "そろそろお着替え" },
+        { "do": "say", "text": "着替えたよ" },
+        { "do": "heartbeat" },
+        { "do": "wait", "ms": 4000 }
+      ]
+    },
+    {
+      "id": "c04",
+      "start": 50,
+      "end": 66,
+      "kind": "device",
+      "heading": "寝室モード：何度聞かれても、同じ言葉で答える",
+      "narration": "寝室モードでは、家族が登録した居場所を答えます。同じ質問を何度されても、同じ言葉で、同じ穏やかさで答えます。「さっきも言った」とは言いません。",
+      "before": [
+        { "do": "clock", "at": "2026-09-29T08:52:00" }
+      ],
+      "steps": [
+        { "do": "wait", "ms": 1800 },
+        { "do": "say", "text": "竜一はどこに行ったの" },
+        { "do": "wait", "ms": 2500 },
+        { "do": "say", "text": "竜一はどこに行ったの" },
+        { "do": "wait", "ms": 2500 }
+      ]
+    },
+    {
+      "id": "c05",
+      "start": 66,
+      "end": 86,
+      "kind": "device",
+      "heading": "お風呂モード：進み具合だけを、別室の家族へ",
+      "narration": "お風呂モード。脱衣所の iPad が体を洗う頃合いを声かけし、「はい」と返事があれば、別室の家族にお知らせが届きます。安全を見張る装置ではありません。進み具合を知らせるだけです。",
+      "before": [
+        { "do": "clock", "at": "2026-09-29T16:59:55" }
+      ],
+      "segments": [
+        { "id": "c05-1", "kind": "live", "duration": 3, "card": "live.html?title=実写 B: 脱衣所の iPad（島村さんが撮影）&sub=脱衣所に置いた iPad&note=スマホ横向き・5 秒" },
+        {
+          "id": "c05-2",
+          "kind": "device",
+          "duration": 11,
+          "steps": [
+            { "do": "wait", "ms": 900 },
+            { "do": "clock", "at": "2026-09-29T17:00:00" },
+            { "do": "api", "as": "family", "method": "PUT", "path": "/api/family/mode", "body": { "mode": "bath" } },
+            { "do": "poll" },
+            { "do": "waitText", "selector": "#sayText", "text": "お風呂の時間ですね" },
+            { "do": "wait", "ms": 2600 },
+            { "do": "clock", "at": "2026-09-29T17:10:02" },
+            { "do": "poll" },
+            { "do": "waitText", "selector": "#sayText", "text": "体を洗いましょうか" },
+            { "do": "say", "text": "はい" },
+            { "do": "wait", "ms": 1500 }
+          ]
+        },
+        {
+          "id": "c05-3",
+          "kind": "family",
+          "duration": 6,
+          "steps": [
+            { "do": "waitText", "selector": "#noticesCard", "text": "体を洗い始めました" },
+            { "do": "wait", "ms": 600 },
+            { "do": "scrollTo", "selector": "#noticesCard .notice:has-text(\"体を洗い始めました\")" },
+            { "do": "wait", "ms": 3500 }
+          ]
+        }
+      ],
+      "after": [
+        { "do": "api", "as": "family", "method": "PUT", "path": "/api/family/mode", "body": { "mode": "bedroom" } }
+      ]
+    },
+    {
+      "id": "c06",
+      "start": 86,
+      "end": 106,
+      "kind": "device",
+      "heading": "「腰が痛い」：診断せず、本人の言葉を添えて人に戻す",
+      "narration": "「腰が痛い」。エージェントは診断しません。本人の言葉をそのまま添えて家族に返し、判断を人に戻します。3 時間後に一度だけ「腰はどうですか」と聞き直します。",
+      "before": [
+        { "do": "clock", "at": "2026-09-29T08:58:00" },
+        {
+          "do": "replay",
+          "scenario": {
+            "name": "9/29 お迎え（録画の前）",
+            "date": "2026-09-29",
+            "isDayservice": true,
+            "turns": [
+              { "at": "09:02", "task": "pickup", "reply": "来たよ、行ってきます" }
+            ]
+          }
+        },
+        { "do": "clock", "at": "2026-09-29T15:59:55" }
+      ],
+      "segments": [
+        {
+          "id": "c06-1",
+          "kind": "device",
+          "duration": 12,
+          "steps": [
+            { "do": "wait", "ms": 1200 },
+            { "do": "clock", "at": "2026-09-29T16:00:00" },
+            { "do": "api", "as": "internal", "method": "POST", "path": "/internal/prompt", "body": { "hh": "hh_demo", "task": "return" } },
+            { "do": "poll" },
+            { "do": "waitText", "selector": "#sayText", "text": "おかえりなさい" },
+            { "do": "say", "text": "疲れた。腰がちょっと痛い" },
+            { "do": "wait", "ms": 2500 }
+          ]
+        },
+        {
+          "id": "c06-2",
+          "kind": "family",
+          "duration": 8,
+          "steps": [
+            { "do": "waitText", "selector": "#noticesCard", "text": "痛い" },
+            { "do": "wait", "ms": 800 },
+            { "do": "scrollTo", "selector": "#noticesCard .notice.check:has-text(\"痛い\")" },
+            { "do": "wait", "ms": 4500 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c07",
+      "start": 106,
+      "end": 128,
+      "kind": "judge",
+      "heading": "返事が 3 回続けて無い：至急。「確認した」で止まる",
+      "narration": "返事が 3 回続けて取れないときは至急。本人には質問をやめ、3 分ごとに安心の一言だけを伝えます。家族が「確認した」を押すまで続き、押せば止まります。",
+      "before": [
+        { "do": "clock", "at": "2026-10-01T07:00:00" },
+        { "do": "replay", "name": "no-answer-escalation" },
+        { "do": "clock", "at": "2026-10-01T12:32:40" }
+      ],
+      "segments": [
+        {
+          "id": "c07-1",
+          "kind": "judge",
+          "duration": 10,
+          "steps": [
+            { "do": "click", "selector": "#playBtn" },
+            { "do": "waitText", "selector": "#score", "text": "再生中" },
+            { "do": "select", "selector": "#scenario", "value": "no-answer-escalation" },
+            { "do": "wait", "ms": 400 },
+            { "do": "mark", "name": "start" },
+            { "do": "click", "selector": "#again" },
+            { "do": "waitText", "selector": "#score", "text": "期待値との一致" },
+            { "do": "wait", "ms": 1200 }
+          ]
+        },
+        {
+          "id": "c07-2",
+          "kind": "device",
+          "duration": 5,
+          "steps": [
+            { "do": "wait", "ms": 600 },
+            { "do": "clock", "at": "2026-10-01T12:33:02" },
+            { "do": "poll" },
+            { "do": "waitText", "selector": "#sayText", "text": "ご家族に連絡しました" },
+            { "do": "wait", "ms": 3200 }
+          ]
+        },
+        {
+          "id": "c07-3",
+          "kind": "family",
+          "duration": 7,
+          "steps": [
+            { "do": "waitText", "selector": "#l4bar", "text": "至急" },
+            { "do": "wait", "ms": 1200 },
+            { "do": "click", "selector": "#l4Go" },
+            { "do": "wait", "ms": 1300 },
+            { "do": "click", "selector": "#noticesCard .notice.urgent button:has-text(\"確認した\")" },
+            { "do": "waitHidden", "selector": "#l4bar" },
+            { "do": "wait", "ms": 2000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c08",
+      "start": 128,
+      "end": 143,
+      "kind": "slack",
+      "heading": "運用エージェント：軽い障害は自分で直して報告する",
+      "narration": "見守りが止まったことに家族が気づかない事態を避けたい。そこで、このエージェントを見守る運用エージェントを置きました。軽い障害は自分で直して報告します。",
+      "card": "slack.html",
+      "steps": []
+    },
+    {
+      "id": "c09",
+      "start": 143,
+      "end": 168,
+      "kind": "family",
+      "heading": "夕方の「今日の様子」：一文ごとに会話へ、昨日までと比べる",
+      "narration": "夕方、一日をまとめて届けます。一文ごとに元の会話へ飛べます。今日のことだけでなく、昨日までと比べてどうかを一行入れます。判定の基準は公的な様式に合わせ、根拠のない値は初期値と明示しています。",
+      "before": [
+        { "do": "clock", "at": "2026-09-29T18:00:00" },
+        { "do": "api", "as": "internal", "method": "POST", "path": "/internal/summary", "body": { "hh": "hh_demo", "date": "2026-09-29" } },
+        { "do": "clock", "at": "2026-09-29T18:05:00" }
+      ],
+      "steps": [
+        { "do": "waitText", "selector": "#p-today", "text": "昨日までとの比較" },
+        { "do": "wait", "ms": 2600 },
+        { "do": "wheel", "y": 380, "ms": 1600 },
+        { "do": "wait", "ms": 2600 },
+        { "do": "wheel", "y": 420, "ms": 1600 },
+        { "do": "wait", "ms": 2400 },
+        { "do": "scrollTo", "selector": "#p-today .report .cite" },
+        { "do": "wait", "ms": 1200 },
+        { "do": "click", "selector": "#p-today .report .cite" },
+        { "do": "waitText", "selector": "#turnSheet", "text": "お母さまのお返事" },
+        { "do": "wait", "ms": 3500 },
+        { "do": "click", "selector": "#turnSheet .btns .btn" },
+        { "do": "scrollTo", "selector": "#p-today .report.span" },
+        { "do": "wait", "ms": 3500 }
+      ]
+    },
+    {
+      "id": "c10",
+      "start": 168,
+      "end": 180,
+      "kind": "diagram",
+      "heading": "",
+      "narration": "自律的に動き、境界は人が握る。止まりにくく、止まっても自分で気づく。見張らない見守りです。",
+      "card": "diagram.html",
+      "steps": []
+    }
+  ]
+}

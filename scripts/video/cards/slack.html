@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>Slack の報告</title>
+<!-- カット 8: 運用エージェントの Slack 報告（実物のスクリーンショットがあれば差し替え）と、行動台帳の 2 行。
+     record.ts が見出しの下の枠（1824×948）で撮影する -->
+<style>
+html,body{margin:0;width:1824px;height:948px;overflow:hidden;background:#f4f6f3;font-family:"Yu Gothic UI","Yu Gothic","Noto Sans JP","Meiryo",sans-serif;color:#1d1c1d}
+.slack{position:absolute;left:60px;top:90px;width:1704px;height:400px;border-radius:14px;overflow:hidden;display:flex;box-shadow:0 10px 30px rgba(0,0,0,.12);background:#fff}
+.side{width:330px;background:#3f0e40;color:#cfc3cf;padding:26px 0;font-size:24px}
+.ws{color:#fff;font-weight:700;font-size:28px;padding:0 26px 22px;border-bottom:1px solid rgba(255,255,255,.15)}
+.sec{padding:20px 26px 8px;font-size:20px;opacity:.8}
+.ch{padding:7px 26px}
+.ch.on{background:#1164a3;color:#fff;font-weight:700}
+.main{flex:1;display:flex;flex-direction:column}
+.top{height:76px;border-bottom:1px solid #e2e2e2;display:flex;align-items:center;padding:0 30px;font-size:30px;font-weight:800}
+.top small{font-weight:400;font-size:20px;color:#616061;margin-left:16px}
+.msgs{flex:1;padding:22px 30px;display:flex;flex-direction:column;justify-content:flex-end;gap:18px}
+.msg{display:flex;gap:18px}
+.av{width:62px;height:62px;border-radius:10px;background:#1f6f5b;color:#fff;font-weight:800;font-size:28px;display:flex;align-items:center;justify-content:center;flex:none}
+.who{font-weight:800;font-size:25px}
+.who .app{font-size:15px;font-weight:700;background:#e8e8e8;color:#616061;border-radius:4px;padding:1px 6px;margin-left:8px;vertical-align:3px}
+.who .t{font-weight:400;font-size:19px;color:#616061;margin-left:10px}
+.body{font-size:30px;line-height:1.55;margin-top:4px}
+.body.old{color:#616061;font-size:24px}
+.ok{display:inline-block;background:#e3efe9;color:#1f6f5b;border-radius:6px;padding:0 10px;font-weight:700}
+.ledger{position:absolute;left:60px;top:540px;width:1704px;background:#fff;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.08);padding:22px 34px}
+.ledger h3{margin:0 0 12px;font-size:26px;color:#1f2a24}
+.ledger h3 span{font-size:20px;color:#7a8680;font-weight:400;margin-left:12px}
+.row{display:grid;grid-template-columns:110px 110px 340px 1fr;gap:16px;font-size:24px;padding:10px 0;border-top:1px solid #e6ebe7;align-items:center}
+.row .a{color:#7a8680}
+.row code{font-family:Consolas,monospace;font-size:24px;font-weight:700}
+.row .inc code{color:#b4443c}
+.row .rec code{color:#1f6f5b}
+</style></head>
+<body>
+<div class="slack">
+  <div class="side">
+    <div class="ws">mimamori2026</div>
+    <div class="sec">チャンネル</div>
+    <div class="ch"># general</div>
+    <div class="ch on"># mother</div>
+    <div class="ch"># dev</div>
+  </div>
+  <div class="main">
+    <div class="top"># mother<small>障害・復旧・デプロイの報告だけ。母の会話は流しません</small></div>
+    <div class="msgs">
+      <div class="msg"><div class="av">見</div><div>
+        <div class="who">mimamori2026<span class="app">アプリ</span><span class="t">16:10</span></div>
+        <div class="body">10/7 16:10 音声合成のタイムアウト 1 件 → 再試行で復旧（<span class="ok">health_recovered</span>）</div>
+      </div></div>
+    </div>
+  </div>
+</div>
+<div class="ledger">
+  <h3>行動台帳<span>運用エージェント（actor: ops）の記録</span></h3>
+  <div class="row inc"><span>16:10</span><span class="a">ops</span><code>health_incident</code><span>音声合成のタイムアウト（tts_timeout）→ 再試行</span></div>
+  <div class="row rec"><span>16:10</span><span class="a">ops</span><code>health_recovered</code><span>再試行で復旧。家族への連絡は不要</span></div>
+</div>
+</body></html>

@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
 
 process.env.APP_PASSPHRASE = 'test-passphrase';
-process.env.DEVICE_TOKENS = 'hh_test:device-token-1';
+process.env.DEVICE_TOKENS = 'hh_test:device-token-1,hh_demo:demo-token-2';
 process.env.INTERNAL_TOKEN = 'internal-token-xyz';
 process.env.HOUSEHOLD_ID = 'hh_test';
 process.env.LINE_CHANNEL_SECRET = 'line-secret-abc';
@@ -76,6 +76,7 @@ function createFakeStore() {
     async listTurns(_hh: string, date: string) { return data.turns.filter(t => t.date === date); },
     async listNotices() { return []; },
     async getHealth() { return null; },
+    async getNotice() { return null; },
     async appendLedger(e: unknown) { data.ledger.push(e); },
   };
   const store = new Proxy({}, {
@@ -170,7 +171,12 @@ test('GET / と /family は web/ の HTML を返し、.. は 404', { skip: skipR
   assert.match(top.headers['content-type'], /text\/html/);
   const fam = await call(router, mockReq({ path: '/family' }));
   assert.equal(fam.status, 200);
-  assert.match(fam.text, /家族 API の確認ページ/);
+  // 本画面（web/family.html）ができたらそちら、無ければ開発用（web/dev/family.html）
+  assert.match(fam.headers['content-type'], /text\/html/);
+  assert.match(fam.text, /家族/);
+  const devFam = await call(router, mockReq({ path: '/dev/family.html' }));
+  assert.equal(devFam.status, 200);
+  assert.match(devFam.text, /家族 API の確認ページ/);
   const bad = await call(router, mockReq({ path: '/dev/..%2F..%2Fpackage.json' }));
   assert.equal(bad.status, 404);
 });
@@ -440,4 +446,140 @@ test('端から端まで: 計画 → 承認 → 声かけ → 返事 → 今日�
 
   const badName = await call(router, mockReq({ method: 'POST', path: '/api/family/replay', headers: fam, body: { name: '../secret' } }));
   assert.equal(badName.status, 400);
+});
+
+// ---- 起動モード・居場所・本人からの質問（docs/02 §11.4） ----
+test('モード・居場所・発話: device/mode と family/mode の往復、family/whereabouts の登録、utterance、bath-return', { skip: skipReason }, async () => {
+  const { MemoryStore } = await import('../src/store/index.js');
+  const { createFakeContext } = await import('../src/state/fakes.js');
+  const { defaultHousehold } = await import('../src/seed/household.js');
+  const store = new MemoryStore();
+  await store.putHousehold(defaultHousehold('hh_test'));
+  let now = new Date('2026-10-01T10:00:00+09:00');   // 木曜（デイ以外）
+  const { ctx, tasks } = createFakeContext({ store, clock: () => now });
+  const router = createRouter!(ctx);
+  const fam = { cookie: familyCookie(), 'content-type': 'application/json' };
+  const dev = { 'X-Device-Token': 'device-token-1', 'content-type': 'application/json' };
+  const internal = { 'X-Internal-Token': 'internal-token-xyz', 'content-type': 'application/json' };
+
+  // 居場所: 形の検査 → 登録 → 読み出し
+  const badBack = await call(router, mockReq({ method: 'PUT', path: '/api/family/whereabouts', headers: fam, body: { place: 'お仕事', backAt: '9:00' } }));
+  assert.equal(badBack.status, 400);
+  const badPlace = await call(router, mockReq({ method: 'PUT', path: '/api/family/whereabouts', headers: fam, body: { place: '', backAt: null } }));
+  assert.equal(badPlace.status, 400);
+  const tooLong = await call(router, mockReq({ method: 'PUT', path: '/api/family/whereabouts', headers: fam, body: { place: 'あ'.repeat(31), backAt: null } }));
+  assert.equal(tooLong.status, 400);
+  const put = await call(router, mockReq({ method: 'PUT', path: '/api/family/whereabouts', headers: fam, body: { place: 'お仕事', backAt: '18:00', note: '残業かも' } }));
+  assert.equal(put.status, 200, put.text);
+  assert.equal(put.json.whereabouts.place, 'お仕事');
+  assert.equal(put.json.whereabouts.backAt, '18:00');
+  assert.equal(put.json.say, '島村さんは、お仕事に行っています。18 時ごろ帰ります。');
+  const get = await call(router, mockReq({ path: '/api/family/whereabouts', headers: fam }));
+  assert.equal(get.json.say, put.json.say);
+  assert.ok((await store.listLedger('hh_test', '2026-10-01')).some(e => e.name === 'whereabouts_updated' && e.actor === 'member:family'));
+
+  // 端末のモード
+  const m0 = await call(router, mockReq({ path: '/api/device/mode', headers: dev }));
+  assert.equal(m0.status, 200, m0.text);
+  assert.deepEqual(m0.json, { mode: 'bedroom', bath: null, whereabouts: { place: 'お仕事', backAt: '18:00', say: put.json.say }, killSwitch: false });
+  const badMode = await call(router, mockReq({ method: 'POST', path: '/api/device/mode', headers: dev, body: { mode: 'kitchen' } }));
+  assert.equal(badMode.status, 400);
+  now = new Date('2026-10-01T19:30:00+09:00');
+  const m1 = await call(router, mockReq({ method: 'POST', path: '/api/device/mode', headers: dev, body: { hh: 'hh_test', mode: 'bath' } }));
+  assert.equal(m1.status, 200, m1.text);
+  assert.equal(m1.json.mode, 'bath');
+  assert.equal(m1.json.bath.startedAt, now.toISOString());
+  const next = await call(router, mockReq({ path: '/api/device/next-prompt', headers: dev }));
+  assert.equal(next.json.mode, 'bath');
+  assert.equal(next.json.prompt.text, 'お風呂の時間ですね。ゆっくりどうぞ');
+  assert.equal(next.json.prompt.expectsReply, false);
+  assert.equal(next.json.prompt.bathStep, 'start');
+
+  // 家族画面: 今日の様子に mode / bath / whereabouts
+  const today = await call(router, mockReq({ path: '/api/family/today', headers: fam }));
+  assert.equal(today.json.mode, 'bath');
+  assert.equal(today.json.bath.startedAt, now.toISOString());
+  assert.equal(today.json.whereabouts.place, 'お仕事');
+
+  // 洗う「はい」→ 戻りの予約 → /internal/bath-return
+  now = new Date('2026-10-01T19:40:00+09:00');
+  const wash = await call(router, mockReq({ path: '/api/device/next-prompt', headers: dev }));
+  assert.equal(wash.json.prompt.bathStep, 'wash');
+  now = new Date('2026-10-01T19:41:00+09:00');
+  const rep = await call(router, mockReq({ method: 'POST', path: '/api/device/reply', headers: dev, body: { promptId: wash.json.prompt.id, text: 'はい' } }));
+  assert.equal(rep.status, 200, rep.text);
+  assert.equal(rep.json.say, 'ゆっくりどうぞ。');
+  const ret = tasks.scheduled.find(s => s.path === '/internal/bath-return')!;
+  assert.ok(ret);
+  now = ret.runAt;
+  const back = await call(router, mockReq({ method: 'POST', path: '/internal/bath-return', headers: internal, body: ret.body }));
+  assert.equal(back.status, 200, back.text);
+  assert.deepEqual(back.json, { ok: true, hh: 'hh_test', switched: true, mode: 'bedroom' });
+  const again = await call(router, mockReq({ method: 'POST', path: '/internal/bath-return', headers: internal, body: ret.body }));
+  assert.equal(again.json.switched, false);
+  const noAuth = await call(router, mockReq({ method: 'POST', path: '/internal/bath-return', body: ret.body }));
+  assert.equal(noAuth.status, 401);
+
+  // 家族画面からの遠隔切替
+  const fm = await call(router, mockReq({ method: 'PUT', path: '/api/family/mode', headers: fam, body: { mode: 'bath' } }));
+  assert.equal(fm.status, 200, fm.text);
+  assert.equal(fm.json.mode, 'bath');
+  const fm2 = await call(router, mockReq({ path: '/api/family/mode', headers: fam }));
+  assert.equal(fm2.json.mode, 'bath');
+  const fmBad = await call(router, mockReq({ method: 'PUT', path: '/api/family/mode', headers: fam, body: { mode: 'x' } }));
+  assert.equal(fmBad.status, 400);
+  const modeLedger = (await store.listLedger('hh_test', '2026-10-01')).filter(e => e.name === 'mode_changed').map(e => e.actor);
+  assert.deepEqual(modeLedger, ['member:device', 'system', 'member:family']);
+
+  // 本人からの発話
+  now = new Date('2026-10-01T20:30:00+09:00');
+  const u0 = await call(router, mockReq({ method: 'POST', path: '/api/device/utterance', headers: dev, body: { text: '  ' } }));
+  assert.equal(u0.status, 400);
+  const u1 = await call(router, mockReq({ method: 'POST', path: '/api/device/utterance', headers: dev, body: { hh: 'hh_test', text: '島村さんはどこ？', source: 'ipad' } }));
+  assert.equal(u1.status, 200, u1.text);
+  assert.match(u1.json.turnId, /^tn_/);
+  assert.equal(u1.json.kind, 'whereabouts');
+  assert.equal(u1.json.say, '島村さんは、もうすぐ帰ってきます。');   // 帰る時刻（18:00）を過ぎている
+  assert.equal(u1.json.expression, 'smile');
+  const u2 = await call(router, mockReq({ method: 'POST', path: '/api/device/utterance', headers: dev, body: { text: '何の薬？' } }));
+  assert.equal(u2.json.kind, 'medicine');
+  const wrongHh = await call(router, mockReq({ method: 'POST', path: '/api/device/utterance', headers: dev, body: { hh: 'hh_other', text: 'どこ' } }));
+  assert.equal(wrongHh.status, 403);
+
+  // L4 の語 → 家族の「確認した」でその場で L4 が下りる
+  const help = await call(router, mockReq({ method: 'POST', path: '/api/device/utterance', headers: dev, body: { text: '助けて' } }));
+  assert.equal(help.json.kind, 'notice');
+  assert.ok((await store.getDay('hh_test', '2026-10-01'))!.l4);
+  const urgent = (await store.listNotices('hh_test', '2026-10-01')).find(n => n.level === 'urgent')!;
+  const ack = await call(router, mockReq({ method: 'POST', path: `/api/family/notices/${urgent.id}/ack`, headers: fam, body: { falseAlarm: true } }));
+  assert.equal(ack.status, 200, ack.text);
+  assert.equal(ack.json.l4Cleared, true);
+  assert.equal((await store.getDay('hh_test', '2026-10-01'))!.l4, null);
+
+  // 居場所を PUT { place: null } で消す
+  const clear = await call(router, mockReq({ method: 'PUT', path: '/api/family/whereabouts', headers: fam, body: { place: null, backAt: null } }));
+  assert.equal(clear.status, 200, clear.text);
+  assert.equal(clear.json.whereabouts, null);
+  assert.equal(clear.json.say, '島村さんは出かけています。もうすぐ帰ってきますよ。');
+  const work = await call(router, mockReq({ method: 'PUT', path: '/api/family/whereabouts', headers: fam, body: { place: '仕事', backAt: '23:00' } }));
+  assert.equal(work.json.say, '島村さんは、お仕事に行っています。23 時ごろ帰ります。');
+
+  // 居場所を消す
+  const del = await call(router, mockReq({ method: 'DELETE', path: '/api/family/whereabouts', headers: fam }));
+  assert.equal(del.status, 200, del.text);
+  assert.equal(del.json.whereabouts, null);
+  assert.equal(del.json.say, '島村さんは出かけています。もうすぐ帰ってきますよ。');
+});
+
+test('GET /api/family/demo-device: hh_demo のときだけ端末トークンを返す。ほかの世帯は 404、未ログインは 401', { skip: skipReason }, async () => {
+  const { ctx } = createCtx();
+  const router = createRouter!(ctx);
+  const headers = { cookie: familyCookie() };
+  const demo = await call(router, mockReq({ path: '/api/family/demo-device', headers, query: { hh: 'hh_demo' } }));
+  assert.equal(demo.status, 200, demo.text);
+  assert.deepEqual(demo.json, { hh: 'hh_demo', token: 'demo-token-2' });
+  const other = await call(router, mockReq({ path: '/api/family/demo-device', headers }));
+  assert.equal(other.status, 404);
+  const noAuth = await call(router, mockReq({ path: '/api/family/demo-device', query: { hh: 'hh_demo' } }));
+  assert.equal(noAuth.status, 401);
 });

@@ -17,6 +17,8 @@ export type LedgerId = string;      // lg_xxxx
 export const TASK_KEYS = [
   'greeting', 'diaper', 'teeth', 'face', 'dress', 'belongings', 'pickup',
   'lunch', 'water', 'return', 'dinner', 'medicine', 'bedtime',
+  // docs/02 §11（2026-10-07）: bath はお風呂モードの「体を洗う」、talk は声かけ以外の会話（本人からの質問・ときたまの声かけ）
+  'bath', 'talk',
 ] as const;
 export type TaskKey = (typeof TASK_KEYS)[number];
 
@@ -24,6 +26,7 @@ export const TASK_LABELS: Record<TaskKey, string> = {
   greeting: '起床の挨拶', diaper: 'おむつ交換', teeth: '歯磨き', face: '洗顔', dress: '着替え',
   belongings: '持ち物', pickup: 'お迎え', lunch: '昼食', water: '水分', return: '帰宅',
   dinner: '夕食', medicine: '服薬', bedtime: '就寝準備',
+  bath: 'お風呂（体を洗う）', talk: '会話',
 };
 
 /** 本人の返事の分類（LLM または規則が決める） */
@@ -42,10 +45,13 @@ export type NoticeLevel = 'urgent' | 'check' | 'info';
  *  no_answer … 連続無反応（L3/L4）  not_done … 再確認しても取れない（L2/L3）
  *  contact … 本人からの外部連絡の依頼  departure … デイへ出発  repeat … 同じ質問の増加（変化評価）
  *  summary … 今日の様子  plan … 今日の声かけ計画  device … 端末の沈黙など運用  other … それ以外
+ *  bath … お風呂モードの声かけ（docs/02 §11.3）
  */
 export type NoticeOrigin =
   | 'l4_words' | 'fire' | 'pain' | 'pain_followup' | 'no_answer' | 'not_done' | 'contact'
-  | 'departure' | 'repeat' | 'summary' | 'plan' | 'device' | 'other';
+  | 'departure' | 'repeat' | 'summary' | 'plan' | 'device' | 'other'
+  /** お風呂モード（docs/02 §11.3）: 「体を洗い始めました」（info）、返事が無い（check。L4 にはしない） */
+  | 'bath';
 export type Channel = 'line' | 'email' | 'slack';
 
 // ---- 世帯 ----
@@ -97,6 +103,10 @@ export interface Household {
     quietHours?: { from: string; to: string };
     /** 就寝時間帯（criteria 3-3 ★8）。声かけをしない・無反応判定の対象外。既定 21:30〜07:30 */
     sleepHours?: { from: string; to: string };
+    /** 寝室モードの「ときたまの声かけ」の間隔（分。docs/02 §11.2）。既定 90、0 で無効 */
+    idleChatMinutes?: number;
+    /** お風呂モードの間隔（分。docs/02 §11.3）。既定 10 / 15 / 10 / 2 / 5 */
+    bath?: BathPolicy;
   };
   /** 通知文に書く連絡先（report-design 2 節）。未設定なら該当の文を省く。住所・持病はここに置かない */
   contacts?: {
@@ -104,9 +114,76 @@ export interface Household {
     nearby?: { name: string; phone: string };
   };
   killSwitch: boolean;
+  /** 起動モード（docs/02 §11）。省略時は bedroom として扱う（state/mode.ts の modeOf） */
+  mode?: HouseholdMode;
+  modeChangedAt?: Date;
+  modeChangedBy?: ModeChangedBy;
+  /** お風呂モードの進み具合（切替で初期化、寝室に戻ると null） */
+  bath?: BathState | null;
+  /** 家族の居場所（本人の「○○さんはどこ？」への答え）。家族画面から登録 */
+  whereabouts?: Whereabouts | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+// ---- 起動モード・居場所（docs/02 §11） ----
+export type HouseholdMode = 'bedroom' | 'bath';
+/** device … iPad の家族用ボタン、family … 家族画面、system … お風呂の自動の戻り */
+export type ModeChangedBy = 'device' | 'family' | 'system';
+
+export interface BathPolicy {
+  /** 切替から「そろそろ体を洗いましょうか」まで */
+  washAfterMinutes: number;
+  /** 体を洗い始めてから「歯を磨きましょう」まで */
+  teethAfterMinutes: number;
+  /** 歯磨きの声かけから寝室へ自動で戻るまで */
+  returnAfterMinutes: number;
+  /** 「まだ」・返事なしの再確認まで（1 回だけ） */
+  recheckMinutes: number;
+  /** 「体を洗いましょうか」から、返事が無いときに家族へ check を送るまでの上限 */
+  notifyAfterMinutes: number;
+}
+
+export interface BathState {
+  startedAt: Date;
+  /** 「そろそろ体を洗いましょうか」を話した時刻 */
+  washAskedAt?: Date;
+  /** 「はい」等の返事があった時刻 */
+  washDoneAt?: Date;
+  /** 「歯を磨きましょう」を話した時刻 */
+  teethAskedAt?: Date;
+  /** 寝室へ自動で戻る予定の時刻（/internal/bath-return） */
+  returnAt?: Date;
+  /** 返事が無く家族へ check を送った時刻 */
+  noAnswerNotifiedAt?: Date;
+  /** 「お風呂から上がりましたか？」を最初に話した時刻 */
+  exitAskedAt?: Date;
+  /** 「上がった」等の返事があった時刻 */
+  exitDoneAt?: Date;
+  /** 上がった／上がったか分からない／まだ入っていたまま終えた、のどれかを家族へ知らせた時刻（二重に送らない） */
+  exitNotifiedAt?: Date;
+  /** 寝室へ戻すとき（/internal/bath-return・nextPrompt の保険）に家族へ知らせる理由。無ければ時間切れ（知らせない） */
+  returnReason?: BathReturnReason;
+}
+
+/**
+ * お風呂を終える理由（台帳 mode_changed の args.reason）。
+ *  manual … 家族の操作  timeout … 時間切れ（知らせない）  exit_done … 「上がった」
+ *  exit_not_yet … 2 回とも「まだ」  exit_unclear … 2 回目が判定できない返事  exit_no_answer … 2 回とも返事なし
+ */
+export type BathReturnReason = 'manual' | 'timeout' | 'exit_done' | 'exit_not_yet' | 'exit_unclear' | 'exit_no_answer';
+
+export interface Whereabouts {
+  /** 行き先（例「お仕事」「買い物」） */
+  place: string;
+  /** 帰る時刻 "HH:MM"（JST）。未定なら null */
+  backAt: string | null;
+  note?: string;
+  updatedAt: Date;
+}
+
+/** 本人からの質問（POST /api/device/utterance）の種類 */
+export type UtteranceKind = 'whereabouts' | 'medicine' | 'notice' | 'chat' | 'ignored';
 
 // ---- 日 ----
 export interface TaskRecord {
@@ -201,7 +278,19 @@ export interface Prompt {
   isReassurance?: boolean;
   /** 痛みの聞き直し（criteria 3-2）。状態機械を動かさず、返事は規則で扱う */
   followup?: { noticeId?: NoticeId; reason: string };
+  /** false なら返事を求めない（お風呂の最初の一言・ときたまの声かけ）。端末は返事を待たず、返事が無くても無反応にしない */
+  expectsReply?: boolean;
+  /** お風呂モードの声かけの段（docs/02 §11.3。state/mode.ts）。状態機械を動かさず、返事は規則で扱う */
+  bathStep?: BathStep;
+  /** 寝室モードの「ときたまの声かけ」（docs/02 §11.2） */
+  idleChat?: boolean;
 }
+
+/**
+ * start …「お風呂の時間ですね」 wash …「体を洗いましょうか」 wash_recheck … その再確認 teeth …「歯を磨きましょう」
+ * exit …「お風呂から上がりましたか？」（再確認も exit。isRecheck で見分ける） end …「ゆっくり休んでくださいね」
+ */
+export type BathStep = 'start' | 'wash' | 'wash_recheck' | 'teeth' | 'exit' | 'end';
 
 export interface ToolCallRecord {
   name: string;
@@ -229,8 +318,13 @@ export interface Turn {
     /** confidence < 0.7。判定未確定（criteria 2 ★2） */
     uncertain?: boolean;
   };
-  /** normal（既定）/ followup（痛みの聞き直しへの返事）/ l4（L4 モード中の返事。判定しない） */
-  kind?: 'normal' | 'followup' | 'l4';
+  /**
+   * normal（既定）/ followup（痛みの聞き直しへの返事）/ l4（L4 モード中の返事。判定しない）/
+   * utterance（声かけへの返事ではない本人からの発話。docs/02 §11.2。夕方の「お返事の記録」には載せない）
+   */
+  kind?: 'normal' | 'followup' | 'l4' | 'utterance';
+  /** kind=utterance のとき、規則が決めた種類 */
+  utteranceKind?: UtteranceKind;
   /** kind=followup のとき、聞き直しの元になった通知 */
   followupNoticeId?: NoticeId;
   toolCalls: ToolCallRecord[];
@@ -350,11 +444,14 @@ export interface NoiseSample { hh: HouseholdId; at: Date; rms: number }
 export interface ScenarioTurn {
   /** "HH:MM" */
   at: string;
-  task: TaskKey;
-  /** null は返事なし */
-  reply: string | null;
-  /** 杉浦さんの基準の期待値 */
-  expect?: { status: Classification; notify?: NoticeLevel };
+  /** 省略できるのは mode だけのステップ（モードを切り替えるだけ） */
+  task?: TaskKey;
+  /** null は返事なし。mode だけのステップでは省略 */
+  reply?: string | null;
+  /** このステップの前に起動モードを切り替える（家族の操作として。docs/02 §11） */
+  mode?: HouseholdMode;
+  /** 杉浦さんの基準の期待値。mode はそのステップの後の起動モード */
+  expect?: { status?: Classification; notify?: NoticeLevel; mode?: HouseholdMode };
 }
 export interface Scenario {
   name?: string;

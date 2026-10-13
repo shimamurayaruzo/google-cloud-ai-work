@@ -76,8 +76,8 @@ test('report-design v2 の型: 見出し・結論・お返事の記録・気に�
 
   assert.deepEqual(sec.heading, ['今日の様子 10月1日（木）']);
   assert.deepEqual(sec.conclusion, ['今日は 2 件、確認をお願いしたいことがあります。']);
+  // 8:40 の「まだ」は、同じ着替えの次のお返事（9:10）が済みなので書かない（最終状態だけを書く）
   assert.deepEqual(sec.replies, [
-    '8:40 着替えの声かけに「まだ」とお返事がありました（まだのようでした）。',
     '9:10 着替えの声かけに「着替えたよ」とお返事がありました。',
     '11:30 水分の声かけに「ちょっと腰が痛いの」とお返事がありました。',
     '12:00 昼食の声かけには、お返事がありませんでした。',
@@ -109,7 +109,7 @@ test('report-design v2 の型: 見出し・結論・お返事の記録・気に�
   assert.equal(s.changeNote, sec.comparison.join(''));
   // 引用: 「お返事の記録」「気になったこと」の各行にターン
   const cited = (line: string) => s.citations.find(c => s.sentences[c.sentenceIndex] === `・${line}`)?.turnId;
-  assert.equal(cited(sec.replies[0]), turns[0].id);
+  assert.equal(cited(sec.replies[0]), turns[1].id);
   assert.equal(cited(sec.concerns[0]), turns[3].id);
   assert.equal(cited(sec.concerns[2]), turns[7].id);
 });
