@@ -69,9 +69,17 @@ export async function handleLineEvents(ctx: AppContext, hh: HouseholdId, events:
     const now = ctx.clock();
     const userId = ev.source?.userId;
     try {
+      // 友だち追加のイベントが取れなかった（既に友だちだった等）場合の救済:
+      // 未登録の userId からメッセージや postback が来たら、follow と同じ手順で登録する
+      if (ev.type !== 'follow' && userId && !memberByLineUser(h, userId)) {
+        logEvent('line_register_from_event', { hh, type: ev.type });
+        await onFollow(ctx, hh, h, userId, now);
+      }
       if (ev.type === 'follow' && userId) {
         await onFollow(ctx, hh, h, userId, now);
         handled++;
+      } else if (ev.type === 'message' && ev.message?.type === 'text' && !isAckText(ev.message.text ?? '')) {
+        logEvent('line_message_ignored', { hh, chars: (ev.message.text ?? '').length });
       } else if (ev.type === 'postback') {
         const pb = parseNoticePostback(ev.postback?.data);
         if (pb && /^[A-Za-z0-9_-]{1,80}$/.test(pb.noticeId)) {
