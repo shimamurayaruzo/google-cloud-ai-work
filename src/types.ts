@@ -105,6 +105,9 @@ export interface Household {
     sleepHours?: { from: string; to: string };
     /** 寝室モードの「ときたまの声かけ」の間隔（分。docs/02 §11.2）。既定 90、0 で無効 */
     idleChatMinutes?: number;
+    /** 返事なしが 3 回続いたとき至急（L4）にするか。false なら確認のお願い（L3）止まりで L4 モードに入らない。
+     *  昼寝が日常の人向け（2026-10-13 家族の判断）。既定 true（criteria 3-3） */
+    noAnswerUrgent?: boolean;
     /** お風呂モードの間隔（分。docs/02 §11.3）。既定 10 / 15 / 10 / 2 / 5 */
     bath?: BathPolicy;
   };

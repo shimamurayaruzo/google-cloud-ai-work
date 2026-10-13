@@ -47,6 +47,8 @@ export type MachineEvent =
       promptedAt?: Date;
       /** 項目（通知文の「○○」に使う。省略時は文言なし） */
       task?: TaskKey;
+      /** 返事なし 3 回目を至急にするか（policy.noAnswerUrgent。省略時 true） */
+      noAnswerUrgent?: boolean;
     }
   | { type: 'suspend'; at?: Date };
 
@@ -80,7 +82,14 @@ function intermediateNotice(status: Classification, n: number, streak: number, t
   return undefined;
 }
 
-function finalNotice(status: Classification, streak: number, task: TaskKey | undefined, since: Date | undefined): StageNotice {
+function finalNotice(status: Classification, streak: number, task: TaskKey | undefined, since: Date | undefined, noAnswerUrgent = true): StageNotice {
+  if (status === 'no_answer' && streak >= 3 && !noAnswerUrgent) {
+    // 昼寝が日常の世帯: 至急にせず、確認のお願いで止める（L4 モードに入らない）
+    return {
+      level: 'check', origin: 'no_answer', stage: 'no_answer_check',
+      reason: `${since ? `${hm(since)} から ` : ''}${streak} 回の声かけに返事がありません。様子を見に行ってください`,
+    };
+  }
   if (status === 'no_answer' && streak >= 3) {
     return {
       level: 'urgent', origin: 'no_answer', stage: 'no_answer_urgent',
@@ -174,7 +183,7 @@ export function transition(record: TaskRecord | undefined, event: MachineEvent):
       }
       // 同じ項目で escalated の通知は一日 1 回だけ
       const first = !base.escalatedAt;
-      const notify = first ? finalNotice(event.status, streak, event.task, since) : undefined;
+      const notify = first ? finalNotice(event.status, streak, event.task, since, event.noAnswerUrgent !== false) : undefined;
       return {
         next: { ...counted, state: 'escalated', escalatedAt: base.escalatedAt ?? event.at },
         ...(notify ? { notify } : {}),

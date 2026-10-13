@@ -114,6 +114,7 @@ export const SettingsSchema = z.object({
     sleepHours: z.object({ from: HHMM, to: HHMM }).optional(),
     /** 寝室モードの「ときたまの声かけ」の間隔（分。0 で無効。docs/02 §11.2） */
     idleChatMinutes: z.number().int().min(0).max(600).optional(),
+    noAnswerUrgent: z.boolean().optional(),
     /** お風呂モードの間隔（分。docs/02 §11.3） */
     bath: z.object({
       washAfterMinutes: z.number().int().min(1).max(120),

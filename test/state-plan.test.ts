@@ -7,16 +7,17 @@ import { jstDate } from '../src/time.js';
 
 const h = defaultHousehold('hh_t');
 
-test('火曜（2026-09-29）と金曜はデイ、木曜（2026-10-01）と日曜は default', () => {
-  const tue = resolvePlan(h, '2026-09-29');
-  assert.equal(tue.isDayservice, true);
-  assert.ok(tue.items.some(i => i.task === 'pickup'));
+test('水曜（2026-09-30）と金曜はデイ、火曜（2026-09-29）・木曜（2026-10-01）と日曜は default', () => {
+  const wed = resolvePlan(h, '2026-09-30');
+  assert.equal(wed.isDayservice, true);
+  assert.ok(wed.items.some(i => i.task === 'pickup'));
   assert.equal(resolvePlan(h, '2026-10-02').isDayservice, true);
 
   const thu = resolvePlan(h, '2026-10-01');
   assert.equal(thu.isDayservice, false);
   assert.ok(thu.items.some(i => i.task === 'lunch'));
   assert.ok(!thu.items.some(i => i.task === 'pickup'));
+  assert.equal(resolvePlan(h, '2026-09-29').isDayservice, false);
   assert.equal(resolvePlan(h, '2026-10-04').isDayservice, false);
 });
 
@@ -31,7 +32,7 @@ test('雛形は docs/03 の値（朝の順番、薬の文言、デモ世帯）',
   const d = h.plan.weekday.dayservice;
   assert.deepEqual(d.slice(0, 4).map(i => i.task), ['greeting', 'diaper', 'teeth', 'face']);
   assert.equal(d.find(i => i.task === 'medicine')!.text, 'ご飯のあとのお薬を飲みましょう。黒い机の上に 2 錠あります');
-  assert.deepEqual(h.plan.dayserviceDays, ['Tue', 'Fri']);
+  assert.deepEqual(h.plan.dayserviceDays, ['Mon', 'Wed', 'Fri', 'Sat']);
   assert.equal(h.members[0].line, undefined);
   assert.equal(h.members[0].email, undefined);
   assert.equal(demoHousehold().id, 'hh_demo');
@@ -54,12 +55,12 @@ test('defaultPromptText: 初回と再確認で言い回しを変える', () => {
 });
 
 test('recheckDelayMinutes: 計画の分 → お迎え前は残りの半分（最小 5 分）', () => {
-  const tue = '2026-09-29';
-  const dress = findPlanItem(resolvePlan(h, tue).items, 'dress')!;   // recheckMinutes 10
-  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(tue, '08:35')), 10);  // 残り 25 分 → 半分 12 ≥ 10
-  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(tue, '08:45')), 7);   // 残り 15 分 → 7
-  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(tue, '08:55')), 5);   // 残り 5 分 → 2 → 最小 5
-  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(tue, '09:10')), 10);  // お迎え後は逆算しない
+  const wed = '2026-09-30';   // 水曜（デイの日）
+  const dress = findPlanItem(resolvePlan(h, wed).items, 'dress')!;   // recheckMinutes 10
+  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(wed, '08:35')), 10);  // 残り 25 分 → 半分 12 ≥ 10
+  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(wed, '08:45')), 7);   // 残り 15 分 → 7
+  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(wed, '08:55')), 5);   // 残り 5 分 → 2 → 最小 5
+  assert.equal(recheckDelayMinutes(h, dress, 'dress', jstDate(wed, '09:10')), 10);  // お迎え後は逆算しない
 });
 
 test('recheckDelayMinutes: デイ以外の日は逆算しない。計画が無い・0 なら policy', () => {

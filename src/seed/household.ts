@@ -67,7 +67,7 @@ export function defaultHousehold(id: HouseholdId = config.defaultHouseholdId): H
     members: [{ id: 'mem_1', name: '島村', order: 1, waitMinutes: 10 }],
     plan: {
       weekday: { default: defaultPlan(), dayservice: dayservicePlan() },
-      dayserviceDays: ['Tue', 'Fri'],
+      dayserviceDays: ['Mon', 'Wed', 'Fri', 'Sat'],
       pickupTime: '09:00',
     },
     policy: {
@@ -81,6 +81,7 @@ export function defaultHousehold(id: HouseholdId = config.defaultHouseholdId): H
       sleepHours: { from: '21:30', to: '07:30' },
       // 寝室モードの「ときたまの声かけ」の間隔（docs/02 §11.2。0 で無効）
       idleChatMinutes: 90,
+      noAnswerUrgent: true,
       // お風呂モードの間隔（docs/02 §11.3）
       bath: { washAfterMinutes: 10, teethAfterMinutes: 15, returnAfterMinutes: 10, recheckMinutes: 2, notifyAfterMinutes: 5 },
     },

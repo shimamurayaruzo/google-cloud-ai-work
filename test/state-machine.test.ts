@@ -176,3 +176,27 @@ test('canRecheck: maxRechecks（既定の世帯は 2）が優先。無ければ 
   assert.equal(canRecheck(twice, rec(1)), true);
   assert.equal(canRecheck(twice, rec(2)), false);
 });
+
+test('noAnswerUrgent=false: 返事なし 3 回目は至急にせず確認のお願いで止める（昼寝が日常の世帯）', () => {
+  const at = new Date('2026-10-01T03:00:00Z');
+  let r = transition(undefined, { type: 'asked', promptId: 'p1', at });
+  for (let i = 1; i <= 3; i++) {
+    const res = transition(r.next, {
+      type: 'classified', status: 'no_answer', at, turnId: `t${i}`, recheckAllowed: i < 3,
+      task: 'lunch', noAnswerUrgent: false,
+    });
+    r = res;
+    if (i === 3) {
+      assert.equal(res.notify?.level, 'check');
+      assert.equal(res.notify?.stage, 'no_answer_check');
+      assert.match(res.notify?.reason ?? '', /3 回の声かけに返事がありません/);
+    }
+  }
+  // 既定（true）なら 3 回目は urgent
+  let u = transition(undefined, { type: 'asked', promptId: 'p2', at });
+  for (let i = 1; i <= 3; i++) {
+    const res = transition(u.next, { type: 'classified', status: 'no_answer', at, turnId: `u${i}`, recheckAllowed: i < 3, task: 'lunch' });
+    u = res;
+    if (i === 3) assert.equal(res.notify?.level, 'urgent');
+  }
+});
