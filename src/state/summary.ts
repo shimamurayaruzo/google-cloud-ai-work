@@ -287,7 +287,9 @@ function morningUnfinishedLine(day: Day, endTime: string): Line | null {
   if (remaining.length === 0) return null;
   const end = m.finishedAt ? new Date(m.finishedAt) : jstDate(day.date, endTime);
   const labels = remaining.map(t => TASK_LABELS[t]).join('・');
-  const head = m.step === 1
+  // 起こす声かけに「起きたくない」「体調が悪い」等のお返事があって終えたときは「お返事がありませんでした」と書かない
+  const wakeStatus = day.tasks.greeting?.status;
+  const head = m.step === 1 && (wakeStatus == null || wakeStatus === 'no_answer' || wakeStatus === 'unclear')
     ? '朝の流れを終えました（起こす声かけに、お返事がありませんでした）。'
     : `朝の流れを「${MORNING_STEP_LABELS[m.step - 1]}」のところで終えました。`;
   return { text: `${hm(end)} ${head}${labels}は未確認です。`, turnId: null, sortAt: end.getTime() };

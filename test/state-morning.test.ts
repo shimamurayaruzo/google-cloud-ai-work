@@ -1,6 +1,8 @@
 // 朝の流れ（モーニング・シーケンス。docs/03 §5、2026-10-14 家族の要望）
 //  8:00 にまず起こす（緊迫感のある言い方を 3 つ順に、返事があるまで 1 分おき・60 回まで）→ おむつ → 洗顔・歯磨き → 着替え を、返事があってから順に進める。
 //  段階表（L3/L4）には乗せない。上限で check を 1 回だけ、その工程で待つ。10:30 で終了。9:00 のお迎えは時刻どおり。
+//  工程①への返事は 起きた／起きたくない／体調が悪い／どれでもない に分ける（2026-10-14 夜）。
+//  工程②〜④の not_yet は「では、できたら教えてくださいね」、2 分後に「〜できましたか？」で確認（返事なしは 5 分後に元の声かけ）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -13,7 +15,8 @@ import { processReply } from '../src/state/turn.js';
 import { buildSummary } from '../src/state/summary.js';
 import { runScenario } from '../src/state/replay.js';
 import {
-  DEFAULT_MORNING_POLICY, MORNING_DIAPER_TEXT, MORNING_DRESS_TEXT, MORNING_FACE_TEXT, morningPolicyOf,
+  DEFAULT_MORNING_POLICY, MORNING_DIAPER_TEXT, MORNING_DRESS_TEXT, MORNING_FACE_TEXT, MORNING_NOT_YET_SAY,
+  MORNING_REFUSE_SAY, MORNING_UNWELL_SAY, classifyWakeReply, morningPolicyOf,
 } from '../src/state/morning.js';
 import { jstDate } from '../src/time.js';
 import type { TurnRunner } from '../src/services.js';
@@ -26,6 +29,9 @@ const WAKE1 = '島村かよこさん！ おはようございます。朝の 8 �
 const WAKE2 = '島村かよこさん、起きてください。朝ですよ';
 const WAKE3 = '島村かよこさん！ 聞こえますか。起きる時間です';
 const DAY_DRESS = '今日はデイサービスで出かける日ですよ。9 時にお迎えが来ます。お着替えをしましょう';
+const DIAPER_FOLLOWUP = 'おむつは替えられましたか？';
+const FACE_FOLLOWUP = 'お顔と歯磨きはできましたか？';
+const DRESS_FOLLOWUP = 'お着替えはできましたか？';
 
 async function setup(opts: { runner?: TurnRunner; patch?: (h: Household) => Household } = {}) {
   const store = new MemoryStore();
@@ -55,7 +61,7 @@ async function wakeUp(fake: Fake, date = WED): Promise<Prompt> {
   return (await next(fake, '08:01', date))!;
 }
 
-test('既定: policy.morning が未設定でも有効（08:00〜10:30、起こす 1 分×60 回、ほか 5 分×6 回）。seed も同じ値', () => {
+test('既定: policy.morning が未設定でも有効（08:00〜10:30、起こす 1 分×60 回、ほか 5 分×6 回・まだのあと 2 分で確認）。seed も同じ値', () => {
   const h = defaultHousehold(HH);
   assert.deepEqual(h.policy.morning, { ...DEFAULT_MORNING_POLICY });
   const { morning: _m, ...rest } = h.policy;
@@ -75,7 +81,7 @@ test('planDay: 朝の流れの日は 8:00〜10:30 の起床・おむつ・歯磨
   assert.deepEqual(thu.prompts.map(p => p.task), ['water', 'lunch', 'water', 'dinner', 'medicine', 'bedtime']);
 });
 
-test('起こす: 8:00 に名前を呼び、返事が無ければ 1 分おきに言い方を強めて繰り返す。どんな返事でも起きたとみなして工程②（おむつ）へ', async () => {
+test('起こす: 8:00 に名前を呼び、返事が無ければ 1 分おきに言い方を強めて繰り返す。「起きたよ」で工程②（おむつ）へ', async () => {
   const fake = await setup();
   await planDay(fake.ctx, HH, WED, at('06:00'));
   assert.equal(await next(fake, '07:59'), null);
@@ -96,10 +102,9 @@ test('起こす: 8:00 に名前を呼び、返事が無ければ 1 分おきに�
   const w4 = (await next(fake, '08:03'))!;
   assert.equal(w4.text, WAKE1);   // 3 つを順に使い、最初に戻る
   assert.equal((await day(fake)).morning!.repeats, 4);
-  // 「まだ眠い」でも起きたとみなす
-  const r2 = await reply(fake, w4, 'まだ眠い', '08:04');
-  assert.equal(r2.turn.classified.status, 'not_yet');
-  assert.equal(r2.say, 'おはようございます。');
+  const r2 = await reply(fake, w4, '起きたよ', '08:04');
+  assert.equal(r2.turn.classified.status, 'done');
+  assert.equal(r2.notices.length, 0);
   const d = await day(fake);
   assert.equal(d.tasks.greeting?.state, 'done');
   assert.equal(d.morning!.step, 2);
@@ -112,13 +117,113 @@ test('起こす: 8:00 に名前を呼び、返事が無ければ 1 分おきに�
   assert.ok(names.includes('morning_step'));
 });
 
-test('起こす: 判定できない音（テレビ等）では起きたとみなさない', async () => {
+test('起こす: 判定できない音（テレビ等）では起きたとみなさない。一言は言わず、1 分後にまた起こす', async () => {
   const fake = await setup();
   const w = (await next(fake, '08:00'))!;
-  await reply(fake, w, '（テレビの音）', '08:00');
+  const r = await reply(fake, w, '（テレビの音）続いては天気です', '08:00');
+  assert.equal(r.say, '');
+  assert.equal(r.turn.classified.status, 'unclear');
+  assert.equal(r.notices.length, 0);
   const d = await day(fake);
   assert.equal(d.morning!.step, 1);
   assert.notEqual(d.tasks.greeting?.state, 'done');
+  const w2 = (await next(fake, '08:01'))!;
+  assert.equal(w2.text, WAKE2);
+  assert.equal(w2.morningStep, 1);
+});
+
+test('起こす: 返事の 3 種類（規則のみ）。起きたくない側を先に見る（「起きたくない」は「起きた」を含む）', () => {
+  for (const t of ['起きた', '起きたよ', '起きてる', '起きます', '起きる', 'はい', 'うん', 'おはよう', '分かった', 'うーん、おはよう']) {
+    assert.equal(classifyWakeReply(t), 'awake', t);
+  }
+  for (const t of ['起きたくない', 'まだ寝る', '寝かせて', '眠い', 'いや', '嫌', 'あとで', 'まだ', 'まだ眠い', 'ううん']) {
+    assert.equal(classifyWakeReply(t), 'refuse', t);
+  }
+  for (const t of ['体調が悪い', '具合が悪い', '気分が悪い', 'しんどい', 'だるい', '気持ち悪い', '頭が痛い', '痛い', '起き上がれない']) {
+    assert.equal(classifyWakeReply(t), 'unwell', t);
+  }
+  for (const t of ['（テレビの音）', 'ニュースです', 'あら']) assert.equal(classifyWakeReply(t), 'none', t);
+  assert.equal(classifyWakeReply(null), 'no_answer');
+  assert.equal(classifyWakeReply('  '), 'no_answer');
+});
+
+test('起こす:「起きたくない」→ 工程①のまま、一言は refuseSay、1 分後にまた起こす（回数は数え続ける）', async () => {
+  const fake = await setup();
+  const w1 = (await next(fake, '08:00'))!;
+  const r = await reply(fake, w1, '起きたくない', '08:00');
+  assert.equal(r.say, MORNING_REFUSE_SAY);
+  assert.equal(r.say, 'がんばって起きてください。それとも体調が悪いのですか？');
+  assert.equal(r.turn.classified.status, 'not_yet');
+  assert.equal(r.notices.length, 0);
+  let d = await day(fake);
+  assert.equal(d.morning!.step, 1);
+  assert.notEqual(d.tasks.greeting?.state, 'done');
+  assert.equal(await nextPrompt(fake.ctx, HH, new Date(at('08:00').getTime() + 50_000)), null);
+  const w2 = (await next(fake, '08:01'))!;
+  assert.equal(w2.text, WAKE2);
+  assert.equal(w2.morningStep, 1);
+  d = await day(fake);
+  assert.equal(d.morning!.repeats, 2);
+  // 「まだ寝る」も同じ。その後「起きたよ」で工程②へ
+  assert.equal((await reply(fake, w2, 'まだ寝る', '08:01')).say, MORNING_REFUSE_SAY);
+  const w3 = (await next(fake, '08:02'))!;
+  assert.equal(w3.text, WAKE3);
+  await reply(fake, w3, '起きたよ', '08:02');
+  assert.equal((await day(fake)).morning!.step, 2);
+  assert.equal((await next(fake, '08:02'))!.text, MORNING_DIAPER_TEXT);
+  assert.equal(fake.familyNotify.calls.length, 0);
+});
+
+test('起こす: refuseSay は policy.morning.refuseSay で変えられる', async () => {
+  const fake = await setup({ patch: h => ({ ...h, policy: { ...h.policy, morning: { ...h.policy.morning!, refuseSay: 'もう朝ですよ。起きましょうね' } } }) });
+  const w = (await next(fake, '08:00'))!;
+  assert.equal((await reply(fake, w, '眠い', '08:00')).say, 'もう朝ですよ。起きましょうね');
+});
+
+test('起こす:「具合が悪い」→ 家族へ check を 1 回、一言は「横になっていてください」、起こすのをやめて朝の流れを終える（cutoff）', async () => {
+  const fake = await setup();
+  await planDay(fake.ctx, HH, WED, at('06:00'));
+  const planCalls = fake.familyNotify.calls.length;
+  const w1 = (await next(fake, '08:00'))!;
+  await reply(fake, w1, null, '08:00');
+  const w2 = (await next(fake, '08:01'))!;
+  const r = await reply(fake, w2, '具合が悪い', '08:01');
+  assert.equal(r.say, MORNING_UNWELL_SAY);
+  assert.equal(r.say, '分かりました。無理をしないで、横になっていてください');
+  assert.ok(!/家族/.test(r.say));
+  assert.deepEqual(r.notices.map(n => n.level), ['check']);
+  const calls = fake.familyNotify.calls.slice(planCalls);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].level, 'check');
+  assert.equal(calls[0].reason, '起こしの声かけに『体調が悪い』とのお返事です');
+  assert.match(calls[0].evidence, /具合が悪い/);
+  const d = await day(fake);
+  assert.equal(d.morning!.result, 'cutoff');
+  assert.equal(d.morning!.step, 1);
+  assert.equal(d.l4 ?? null, null);
+  // 起こす声かけは止まる（1 分後も 10 分後も出ない）
+  for (const time of ['08:02', '08:03', '08:10']) {
+    const p = await next(fake, time);
+    assert.ok(!p || p.morningStep == null, time);
+  }
+  assert.equal(fake.familyNotify.calls.length - planCalls, 1);
+  assert.ok((await fake.store.listLedger(HH, WED)).some(e => e.name === 'morning_finished' && (e.args as { why?: string }).why === 'unwell'));
+  // 残りの工程は夕方の要約に「未確認」（「お返事がありませんでした」とは書かない）
+  const s = await buildSummary(fake.ctx, HH, WED, { useLlm: false });
+  assert.ok(s.sections!.concerns.some(l => /^8:01 朝の流れを「起こす声かけ」のところで終えました。起床の挨拶・おむつ交換・洗顔・歯磨き・着替えは未確認です。$/.test(l)),
+    JSON.stringify(s.sections!.concerns));
+});
+
+test('起こす:「頭が痛い」は痛みの check（会話ターン）だけ。体調が悪いの check は重ねず、起こすのをやめる', async () => {
+  const fake = await setup({ runner: new RulesTurnRunner() });
+  const w = (await next(fake, '08:00'))!;
+  const r = await reply(fake, w, '頭が痛い', '08:00');
+  assert.deepEqual(r.notices.map(n => [n.level, n.origin]), [['check', 'pain']]);
+  assert.equal(fake.familyNotify.calls.length, 1);
+  assert.equal(r.say, MORNING_UNWELL_SAY);
+  assert.equal((await day(fake)).morning!.result, 'cutoff');
+  const p = await next(fake, '08:01');
+  assert.ok(!p || p.morningStep == null);
 });
 
 test('朝の流れの最中は 8:05 の時刻ベースのおむつが出ない（起きていないのに進まない）', async () => {
@@ -132,21 +237,26 @@ test('朝の流れの最中は 8:05 の時刻ベースのおむつが出ない�
   assert.ok(!(await fake.store.listPrompts(HH, WED)).some(p => p.task === 'diaper'));
 });
 
-test('工程②で「まだ」→ 5 分後に同じ声かけをもう一度。済んだら工程③（洗顔・歯磨き）、done なら歯磨きも済み → 工程④（デイの日の文言）→ 完了', async () => {
+test('工程②で「まだ」→「では、できたら教えてくださいね」、2 分後に「おむつは替えられましたか？」。済んだら工程③（洗顔・歯磨き）、done なら歯磨きも済み → 工程④（デイの日の文言）→ 完了', async () => {
   const fake = await setup();
   const d1 = await wakeUp(fake);
   assert.equal(d1.text, MORNING_DIAPER_TEXT);
   const r = await reply(fake, d1, 'まだ', '08:01');
   assert.equal(r.notices.length, 0);
+  assert.equal(r.say, MORNING_NOT_YET_SAY);
+  assert.equal(r.say, 'では、できたら教えてくださいね');
   assert.equal((await day(fake)).tasks.diaper?.state, 'rechecking');
-  assert.equal(await next(fake, '08:05'), null);   // 5 分たっていない
-  const d2 = (await next(fake, '08:06'))!;
-  assert.equal(d2.text, MORNING_DIAPER_TEXT);
+  assert.equal((await day(fake)).morning!.awaitingDone, true);
+  assert.equal(await next(fake, '08:02'), null);   // 2 分たっていない
+  const d2 = (await next(fake, '08:03'))!;
+  assert.equal(d2.text, DIAPER_FOLLOWUP);
   assert.equal(d2.isRecheck, true);
-  await reply(fake, d2, '替えたよ', '08:07');
+  assert.equal(d2.morningStep, 2);
+  assert.equal((await day(fake)).morning!.repeats, 2);   // 数え方は変えない
+  await reply(fake, d2, '替えたよ', '08:04');
   assert.equal((await day(fake)).tasks.diaper?.state, 'done');
 
-  const f = (await next(fake, '08:07'))!;
+  const f = (await next(fake, '08:04'))!;
   assert.equal(f.text, MORNING_FACE_TEXT);
   assert.equal(f.task, 'face');
   await reply(fake, f, '洗ったよ', '08:10');
@@ -167,6 +277,48 @@ test('工程②で「まだ」→ 5 分後に同じ声かけをもう一度。�
   assert.equal(fake.familyNotify.calls.length, 0);
 });
 
+test('工程②〜④:「今から替える」「着替えます」も not_yet（2 分後に確認）。返事なしは今までどおり 5 分後に元の声かけ', async () => {
+  const fake = await setup();
+  const d1 = await wakeUp(fake);
+  const r1 = await reply(fake, d1, '今から替える', '08:01');
+  assert.equal(r1.turn.classified.status, 'not_yet');
+  assert.equal(r1.say, MORNING_NOT_YET_SAY);
+  const d2 = (await next(fake, '08:03'))!;
+  assert.equal(d2.text, DIAPER_FOLLOWUP);
+  // 確認に返事なし → 5 分後に元の声かけ
+  const r2 = await reply(fake, d2, null, '08:03');
+  assert.notEqual(r2.say, MORNING_NOT_YET_SAY);
+  assert.equal((await day(fake)).morning!.awaitingDone, undefined);
+  assert.equal(await next(fake, '08:05'), null);
+  const d3 = (await next(fake, '08:08'))!;
+  assert.equal(d3.text, MORNING_DIAPER_TEXT);
+  await reply(fake, d3, '替えたよ', '08:08');
+  const f = (await next(fake, '08:08'))!;
+  assert.equal((await reply(fake, f, 'これから洗います', '08:09')).say, MORNING_NOT_YET_SAY);
+  const f2 = (await next(fake, '08:11'))!;
+  assert.equal(f2.text, FACE_FOLLOWUP);
+  await reply(fake, f2, '洗ったよ', '08:12');
+  const dr = (await next(fake, '08:12'))!;
+  assert.equal(dr.text, DAY_DRESS);
+  const r3 = await reply(fake, dr, '着替えます', '08:13');
+  assert.equal(r3.turn.classified.status, 'not_yet');
+  assert.equal(r3.say, MORNING_NOT_YET_SAY);
+  assert.equal((await next(fake, '08:15'))!.text, DRESS_FOLLOWUP);
+  assert.equal(fake.familyNotify.calls.length, 0);
+});
+
+test('工程②〜④の not_yet の一言・確認の言い回し・間隔は policy.morning で変えられる', async () => {
+  const fake = await setup({
+    patch: h => ({ ...h, policy: { ...h.policy, morning: {
+      ...h.policy.morning!, stepFollowupMinutes: 3, notYetSay: '終わったら呼んでくださいね', followupTexts: { diaper: 'おむつ、どうですか？' },
+    } } }),
+  });
+  const d1 = await wakeUp(fake);
+  assert.equal((await reply(fake, d1, 'まだ', '08:01')).say, '終わったら呼んでくださいね');
+  assert.equal(await next(fake, '08:03'), null);
+  assert.equal((await next(fake, '08:04'))!.text, 'おむつ、どうですか？');
+});
+
 test('デイ以外の日の工程④は「お着替えをしましょうか」', async () => {
   const fake = await setup();
   const d1 = await wakeUp(fake, THU);
@@ -182,7 +334,8 @@ test('工程②で 6 回取れなければ check を 1 回だけ。以後も同�
   let p = await wakeUp(fake);
   let t = 1;   // 8:01 から 5 分おき
   for (let i = 1; i <= 6; i += 1) {
-    assert.equal(p.text, MORNING_DIAPER_TEXT, `${i} 回目`);
+    // 返事なしのあとは元の声かけ、「まだ」のあとは確認の言い回し（数え方・上限は同じ）
+    assert.equal(p.text, i % 2 ? (i === 1 ? MORNING_DIAPER_TEXT : DIAPER_FOLLOWUP) : MORNING_DIAPER_TEXT, `${i} 回目`);
     const time = `08:${String(t + 1).padStart(2, '0')}`;
     const r = await reply(fake, p, i % 2 ? null : 'まだ', time);
     if (i < 6) {
@@ -329,7 +482,7 @@ test('再生モード: morning.json（台本の morning: true）が全件一致'
   const r = await runScenario(ctx, 'hh_demo', scenario, { withSummary: true });
   assert.equal(r.failCount, 0, JSON.stringify(r.steps.filter(s => s.pass === false), null, 2));
   assert.equal(r.passCount, scenario.turns.filter(t => t.expect).length);
-  assert.deepEqual(r.steps.filter(s => s.morningStep).map(s => s.morningStep), [1, 1, 2, 2, 3, 4]);
+  assert.deepEqual(r.steps.filter(s => s.morningStep).map(s => s.morningStep), [1, 1, 1, 2, 2, 3, 4]);
   assert.equal((await store.getDay('hh_demo', scenario.date))!.morning!.result, 'done');
   assert.ok(!familyNotify.calls.some(c => c.level === 'urgent' || c.level === 'check'));
 });

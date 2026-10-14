@@ -380,10 +380,11 @@
 
   function renderBath() {
     var b = st.bath || {};
-    // 「上がりましたか？」まで来たら、それより前で声をかけた段は済んだ印にする
+    // 順序は 歯磨き → 体を洗う → 出る（2026-10-14）。先の段まで来たら、それより前で声をかけた段は済んだ印にする
     var exitOn = !!(b.exitAskedAt || b.exitDoneAt);
+    var washOn = !!(b.washAskedAt || b.washDoneAt);
     var wash = b.washDoneAt || (exitOn && b.washAskedAt) ? 'done' : (b.washAskedAt ? 'now' : '');
-    var teeth = st.bathTeethDone || (exitOn && b.teethAskedAt) ? 'done' : (b.teethAskedAt ? 'now' : '');
+    var teeth = st.bathTeethDone || ((washOn || exitOn) && b.teethAskedAt) ? 'done' : (b.teethAskedAt ? 'now' : '');
     var exit = b.exitDoneAt ? 'done' : (b.exitAskedAt ? 'now' : '');
     $('stepWash').className = 'step ' + wash;
     $('stepTeeth').className = 'step ' + teeth;
@@ -943,12 +944,13 @@
     var now = new Date().toISOString();
     var step = p.bathStep || (p.task === 'bath' ? 'wash' : p.task === 'teeth' ? 'teeth' : null);
     if (step === 'wash' || step === 'wash_recheck') {
+      // 歯磨きはもう過ぎている
+      if (b.teethAskedAt) st.bathTeethDone = true;
       if (!b.washAskedAt) b.washAskedAt = now;
     } else if (step === 'teeth') {
-      if (!b.washDoneAt) b.washDoneAt = now;
       if (!b.teethAskedAt) b.teethAskedAt = now;
     } else if (step === 'exit') {
-      // 「お風呂から上がりましたか？」（再確認も exit）。洗い始め・歯磨きはもう過ぎている
+      // 「そろそろお風呂を出ませんか？」（再確認も exit）。歯磨き・体を洗うはもう過ぎている
       if (!b.washDoneAt && b.washAskedAt) b.washDoneAt = now;
       if (b.teethAskedAt) st.bathTeethDone = true;
       if (!b.exitAskedAt) b.exitAskedAt = now;

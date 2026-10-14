@@ -9,14 +9,23 @@
 // 家族がその通知を「確認した」にしたら、同じ工程の声かけをもう一度始める。endTime を過ぎたら、またはお迎え（pickup）の
 // 声かけを話したら朝の流れを終える（cutoff）。残りの工程は夕方の要約に「未確認」として載る（state/summary.ts）。
 //
+// 工程①への返事は規則だけで 3 種類に分ける（classifyWakeReply。2026-10-14 夜の家族の要望。LLM の分類は使わない）:
+//   起きた（はい・おはよう・起きた 等）→ 工程②へ ／ 起きたくない（まだ寝る・眠い・いや 等）→ 工程①のまま、一言は refuseSay、
+//   1 分おきの起こす声かけを続ける ／ 体調が悪い（具合が悪い・しんどい・痛い 等。痛み・L4 の語は rules が先に拾う）→ 一言は
+//   「分かりました。無理をしないで、横になっていてください」、家族へ check を 1 回（痛み・至急の通知を出したターンはそれだけ）、
+//   起こす声かけを止めて朝の流れを終える（cutoff）。どれでもない返事（テレビの音・判定できない）は起きたとみなさず続ける（一言なし）。
+// 工程②〜④で not_yet（「まだ」「今から替える」「着替えます」）のときは、一言「では、できたら教えてくださいね」（notYetSay）、
+// stepFollowupMinutes（2）分後に確認の言い回し（「おむつは替えられましたか？」等。followupTexts）で聞く。返事なしは 5 分後に元の声かけ。
+//
 // 朝の流れの繰り返しは、起こすための繰り返しであって無反応の異常検知ではないので、基準 v2 の段階表（L3/L4。state/machine.ts）
 // には乗せない。L4 の語（転んだ・助けて等）・痛みの言葉はいつもどおり（会話ターンの通知がそのまま出る）。
 //
 // 時刻ベースの声かけとの関係: planDay は 8:00〜10:30 の greeting / diaper / teeth / face / dress / belongings を作らない。
 // それ以外（pickup・昼・夕など）は今までどおり時刻で出る。
 
+import { detectL4, detectPain, isLikelyNotPerson } from '../agent/rules.js';
 import { logEvent } from '../log.js';
-import type { AppContext } from '../services.js';
+import type { AppContext, TurnOutcome } from '../services.js';
 import { addMinutes, hhmm, hm, spokenTime } from '../time.js';
 import {
   type Classification, type DateKey, type Day, type DayMorning, type Household, type HouseholdId,
@@ -29,7 +38,7 @@ import { safeNotify } from './turn.js';
 
 export const DEFAULT_MORNING_POLICY: Readonly<MorningPolicy> = {
   enabled: true, startTime: '08:00', endTime: '10:30',
-  wakeRepeatMinutes: 1, wakeMaxRepeats: 60, stepRepeatMinutes: 5, stepMaxRepeats: 6,
+  wakeRepeatMinutes: 1, wakeMaxRepeats: 60, stepRepeatMinutes: 5, stepMaxRepeats: 6, stepFollowupMinutes: 2,
 };
 
 /**
@@ -53,8 +62,102 @@ export const MORNING_STEP_LABELS: readonly string[] = ['起こす声かけ', '�
 export const MORNING_DIAPER_TEXT = 'おむつやパンツは濡れていませんか？ 新しいのに替えましょうか';
 export const MORNING_FACE_TEXT = '顔を洗って、歯を磨きましょうね';
 export const MORNING_DRESS_TEXT = 'お着替えをしましょうか';
-/** 起きた（工程①に返事があった）ときの一言。返事が「まだ眠い」等でも起きたとみなす */
+/** 起きた（工程①に「起きた」の返事があった）ときの一言（会話ターンが done と判定しなかったときに使う） */
 export const MORNING_AWAKE_SAY = 'おはようございます。';
+/** 工程①に「起きたくない」「まだ寝たい」等のときの一言（policy.morning.refuseSay で変えられる） */
+export const MORNING_REFUSE_SAY = 'がんばって起きてください。それとも体調が悪いのですか？';
+/** 工程①に「体調が悪い」等のときの一言。家族に知らせたことは本人に言わない */
+export const MORNING_UNWELL_SAY = '分かりました。無理をしないで、横になっていてください';
+/** そのときの家族への確認のお願い（check）の理由 */
+export const MORNING_UNWELL_REASON = '起こしの声かけに『体調が悪い』とのお返事です';
+/** 工程②〜④で not_yet のときの一言（policy.morning.notYetSay で変えられる） */
+export const MORNING_NOT_YET_SAY = 'では、できたら教えてくださいね';
+/** 工程②〜④で not_yet のあと stepFollowupMinutes 分後に出す確認の言い回し（policy.morning.followupTexts で変えられる） */
+export const MORNING_FOLLOWUP_TEXTS: Readonly<Partial<Record<TaskKey, string>>> = {
+  diaper: 'おむつは替えられましたか？',
+  face: 'お顔と歯磨きはできましたか？',
+  dress: 'お着替えはできましたか？',
+};
+
+// ---- 工程①（起こす）への返事の 3 種類（規則のみ。部分一致。体調が悪い → 起きたくない → 起きた の順に見る） ----
+// 痛み・L4 の語は rules の detectPain / detectL4 でも拾う（通知は会話ターンの check / urgent）。テレビ等の印は isLikelyNotPerson。
+// 「起きたくない」は「起きた」を含むので、起きたくない側を先に見る。
+
+/** 体調が悪い（家族へ check、起こす声かけを止めて朝の流れを終える） */
+export const WAKE_UNWELL_WORDS: readonly string[] = [
+  '体調が悪い', '体調悪い', '具合が悪い', '具合悪い', 'ぐあいがわるい', '気分が悪い', '気分悪い',
+  '気持ち悪い', '気持ちが悪い', 'きもちわるい', '調子が悪い', '調子悪い', 'しんどい', 'だるい', 'ダルい',
+  '頭が痛い', '痛い', '熱がある', '熱っぽい', '吐き気', 'はきけ',
+];
+/** 起きたくない・まだ寝たい（工程①のまま、一言は refuseSay、起こす声かけは続ける） */
+export const WAKE_REFUSE_WORDS: readonly string[] = [
+  '起きたくない', 'おきたくない', '起きない', 'おきない', '起きられない', '起きれない', 'おきれない',
+  'まだ', '寝かせて', 'ねかせて', '寝たい', 'ねたい', '寝ていたい', '寝てたい',
+  '眠い', 'ねむい', '眠たい', 'ねむたい', '疲れた', 'つかれた', 'くたびれた',
+  'いや', '嫌', 'ううん', 'いいえ', 'あとで', '後で', '待って', 'まって', 'もうちょっと', 'もう少し', 'もうすこし', 'うるさい',
+];
+/** 起きた（工程②へ） */
+export const WAKE_AWAKE_WORDS: readonly string[] = [
+  '起きた', 'おきた', '起きてる', 'おきてる', '起きてます', '起きました', '起きます', 'おきます', '起きる', 'おきる',
+  'はい', 'はーい', 'うん', 'ええ', 'おはよう', '分かった', 'わかった', '分かりました', 'わかりました', '了解',
+];
+
+/** 工程①への返事の種類。no_answer は返事なし、none は起きたとみなさない返事（テレビの音・判定できない） */
+export type WakeReply = 'awake' | 'refuse' | 'unwell' | 'none' | 'no_answer';
+
+/** 工程①（起こす）への返事を分ける（規則のみ） */
+export function classifyWakeReply(replyText: string | null | undefined): WakeReply {
+  const t = (replyText ?? '').trim();
+  if (!t) return 'no_answer';
+  if (isLikelyNotPerson(t)) return 'none';
+  if (detectL4(t) || detectPain(t) || WAKE_UNWELL_WORDS.some(w => t.includes(w))) return 'unwell';
+  if (WAKE_REFUSE_WORDS.some(w => t.includes(w))) return 'refuse';
+  if (WAKE_AWAKE_WORDS.some(w => t.includes(w))) return 'awake';
+  return 'none';
+}
+
+const WAKE_STATUS: Record<WakeReply, Classification> = {
+  awake: 'done', refuse: 'not_yet', unwell: 'not_yet', none: 'unclear', no_answer: 'no_answer',
+};
+const WAKE_NOTE: Record<WakeReply, string> = {
+  awake: '起きた', refuse: '起きたくない', unwell: '体調が悪い', none: '起きたか分からない', no_answer: '返事なし',
+};
+
+/** 工程②〜④の「これからする」（「今から替える」「着替えます」）。済んだの言い方（〜た・ました・済んだ）があれば当てない */
+const WILL_DO = /今から|いまから|これから|ます(よ|ね|わ)?[。！!]?$|(する|やる|替える|かえる|着る|洗う|あらう|磨く|みがく)(よ|ね|わ|から)?[。！!]?$/;
+const PAST_DONE = /た(よ|ね|わ|の|って)?([。！!、]|$)|ました|済|すんだ|終わ|おわ/;
+
+/**
+ * 朝の流れの声かけへの会話ターンの分類を、朝の流れの決まりで揃える（turn.ts から。L4・痛み・連絡の依頼の intents はそのまま）。
+ *  工程①: classifyWakeReply の結果で status を決める（起きた → done、起きたくない・体調が悪い → not_yet、どれでもない → unclear）
+ *  工程②〜④: 「今から替える」「着替えます」のような「これからする」は not_yet にする
+ */
+export function normalizeMorningOutcome(
+  step: number, replyText: string | null, outcome: TurnOutcome,
+): { outcome: TurnOutcome; wake?: WakeReply } {
+  const text = (replyText ?? '').trim();
+  let status: Classification | null = null;
+  let note = '';
+  let wake: WakeReply | undefined;
+  if (step === 1) {
+    wake = classifyWakeReply(replyText);
+    status = WAKE_STATUS[wake];
+    note = wake === 'no_answer' ? '返事なし' : `起こす声かけ: ${WAKE_NOTE[wake]}「${excerpt(text, 16)}」`;
+  } else if (text && outcome.classified.status !== 'not_yet' && outcome.classified.status !== 'no_answer'
+    && !isLikelyNotPerson(text) && WILL_DO.test(text) && !PAST_DONE.test(text)) {
+    status = 'not_yet';
+    note = `これからする「${excerpt(text, 16)}」`;
+  }
+  if (status == null) return { outcome };
+  const confidence = status === 'unclear' ? 0.5 : 1;
+  const st = status;
+  const task = morningStepTask(step);
+  const intents = outcome.intents.map(i => (i.type === 'record' && i.task === task ? { ...i, status: st, note, confidence } : i));
+  return {
+    outcome: { ...outcome, classified: { status: st, note, by: 'rules', confidence, uncertain: confidence < 0.7 }, intents },
+    ...(wake ? { wake } : {}),
+  };
+}
 
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -74,9 +177,29 @@ export function morningPolicyOf(h: Pick<Household, 'policy'>): MorningPolicy {
     wakeMaxRepeats: intOr(m.wakeMaxRepeats, d.wakeMaxRepeats),
     stepRepeatMinutes: intOr(m.stepRepeatMinutes, d.stepRepeatMinutes),
     stepMaxRepeats: intOr(m.stepMaxRepeats, d.stepMaxRepeats),
+    stepFollowupMinutes: intOr(m.stepFollowupMinutes, d.stepFollowupMinutes),
     ...(Array.isArray(m.wakeTexts) && m.wakeTexts.some(t => typeof t === 'string' && t.trim())
       ? { wakeTexts: m.wakeTexts.filter(t => typeof t === 'string' && t.trim()) } : {}),
+    ...(typeof m.refuseSay === 'string' && m.refuseSay.trim() ? { refuseSay: m.refuseSay.trim() } : {}),
+    ...(typeof m.notYetSay === 'string' && m.notYetSay.trim() ? { notYetSay: m.notYetSay.trim() } : {}),
+    ...(m.followupTexts && typeof m.followupTexts === 'object' ? followupTextsOf(m.followupTexts) : {}),
   };
+}
+
+function followupTextsOf(v: Partial<Record<TaskKey, string>>): { followupTexts?: Partial<Record<TaskKey, string>> } {
+  const out: Partial<Record<TaskKey, string>> = {};
+  for (const [k, t] of Object.entries(v)) if (typeof t === 'string' && t.trim()) out[k as TaskKey] = t.trim();
+  return Object.keys(out).length > 0 ? { followupTexts: out } : {};
+}
+
+/** 工程①で「起きたくない」等のときの一言 */
+export function refuseSayOf(h: Pick<Household, 'policy'>): string {
+  return morningPolicyOf(h).refuseSay ?? MORNING_REFUSE_SAY;
+}
+
+/** 工程②〜④で not_yet のときの一言 */
+export function notYetSayOf(h: Pick<Household, 'policy'>): string {
+  return morningPolicyOf(h).notYetSay ?? MORNING_NOT_YET_SAY;
 }
 
 /** 起こす声かけの n 回目（1 始まり）の文言 */
@@ -109,16 +232,25 @@ function stepLabel(step: number): string {
   return MORNING_STEP_LABELS[Math.min(Math.max(step, 1), MORNING_LAST_STEP) - 1];
 }
 
-function repeatMinutesOf(p: MorningPolicy, step: number): number {
-  return step === 1 ? p.wakeRepeatMinutes : p.stepRepeatMinutes;
+function repeatMinutesOf(p: MorningPolicy, m: Pick<DayMorning, 'step' | 'awaitingDone'>): number {
+  if (m.step === 1) return p.wakeRepeatMinutes;
+  return m.awaitingDone ? p.stepFollowupMinutes : p.stepRepeatMinutes;
 }
 
 function maxRepeatsOf(p: MorningPolicy, step: number): number {
   return step === 1 ? p.wakeMaxRepeats : p.stepMaxRepeats;
 }
 
-/** 工程の声かけの文言。n はその工程で何回目か（1 始まり。起こす声かけの言い方を変えるのに使う） */
-export function morningStepText(step: number, household: Household, isDayservice: boolean, now: Date, n = 1): string {
+/**
+ * 工程の声かけの文言。n はその工程で何回目か（1 始まり。起こす声かけの言い方を変えるのに使う）。
+ * followup は工程②〜④で not_yet のあとの確認の言い回し（「おむつは替えられましたか？」等）
+ */
+export function morningStepText(step: number, household: Household, isDayservice: boolean, now: Date, n = 1, followup = false): string {
+  if (followup && step >= 2) {
+    const task = morningStepTask(step);
+    const t = morningPolicyOf(household).followupTexts?.[task] ?? MORNING_FOLLOWUP_TEXTS[task];
+    if (t) return t;
+  }
   switch (step) {
     case 1: return wakeText(household, n, now);
     case 2: return MORNING_DIAPER_TEXT;
@@ -243,7 +375,7 @@ export async function nextMorningPrompt(
   }
 
   const last = asDate(m.stepAskedAt);
-  if (last && now.getTime() < addMinutes(last, repeatMinutesOf(p, m.step)).getTime()) {
+  if (last && now.getTime() < addMinutes(last, repeatMinutesOf(p, m)).getTime()) {
     if (m !== day.morning) { await saveMorning(ctx, hh, date, m); day.morning = m; }
     return { handled: true, prompt: null };
   }
@@ -268,6 +400,7 @@ export async function nextMorningPrompt(
     m = { ...m, repeats: 0 };
     delete m.stepAskedAt;
     delete m.noticeId;
+    delete m.awaitingDone;
     await appendLedger(ctx, {
       hh, date, at: now, kind: 'system', name: 'morning_step', noticeId: notice.id,
       args: { step: m.step, task: morningStepTask(m.step), result: 'resumed' },
@@ -288,7 +421,7 @@ export async function askMorningStep(
   const hh = household.id;
   const date = day.date;
   const task = morningStepTask(m.step);
-  const text = morningStepText(m.step, household, day.isDayservice, now, m.repeats + 1);
+  const text = morningStepText(m.step, household, day.isDayservice, now, m.repeats + 1, Boolean(m.awaitingDone));
   const next: DayMorning = { ...m, repeats: m.repeats + 1, stepAskedAt: now };
   await saveMorning(ctx, hh, date, next);
   day.morning = next;
@@ -311,6 +444,10 @@ export interface MorningReplyResult {
   advanced: boolean;
   /** 返事を処理したあとの工程（終わったら null） */
   step: number | null;
+  /** 工程①への返事の種類（いまの工程①への返事のときだけ。遅れた返事には付けない） */
+  wake?: WakeReply;
+  /** 工程②〜④で not_yet（一言は notYetSay、stepFollowupMinutes 分後に確認の言い回し） */
+  notYet?: boolean;
 }
 
 function doneRecord(prev: TaskRecord | undefined, a: { now: Date; turnId: TurnId; replyText: string | null }): TaskRecord {
@@ -323,8 +460,10 @@ function doneRecord(prev: TaskRecord | undefined, a: { now: Date; turnId: TurnId
 
 /**
  * 朝の流れの声かけへの返事（turn.ts の applyIntents から。会話ターンの分類と L4・痛みの通知は済んでいる）。
- *  工程①: 返事が null でなく unclear でもなければ（done / not_yet 問わず）起きたとみなし greeting を done、工程②へ
- *  工程②〜④: done なら項目を done（③は teeth も）にして次へ。それ以外はこの工程で待つ（状態は rechecking）
+ *  工程①: classifyWakeReply で分ける。起きた → greeting を done、工程②へ。起きたくない・どれでもない・返事なし → 工程①で待つ。
+ *         体調が悪い → 家族へ check を 1 回（alerted＝痛み・至急の通知を出したターンなら出さない）、朝の流れを cutoff で終える
+ *  工程②〜④: done なら項目を done（③は teeth も）にして次へ。それ以外はこの工程で待つ（状態は rechecking）。
+ *         not_yet なら awaitingDone（次は stepFollowupMinutes 分後に確認の言い回し）
  *  上限に達して取れなければ、家族へ check を 1 回だけ（notified）。段階表の通知は出さない
  * tasks はその場で書き換える（呼ぶ側の記録と揃えるため）。
  */
@@ -333,6 +472,8 @@ export async function applyMorningReply(
   a: {
     household: Household; day: Day; prompt: Prompt; tasks: Day['tasks'];
     status: Classification; replyText: string | null; turnId: TurnId; now: Date;
+    /** このターンで痛み・至急の通知を出した（体調が悪いの check を重ねない） */
+    alerted?: boolean;
   },
 ): Promise<MorningReplyResult> {
   const { household, prompt, tasks, status, replyText, turnId, now } = a;
@@ -360,9 +501,28 @@ export async function applyMorningReply(
 
   const step = m.step;
   const task = morningStepTask(step);
-  const awake = step === 1
-    ? replyText != null && replyText.trim() !== '' && status !== 'unclear'
-    : status === 'done';
+  const wake = step === 1 ? classifyWakeReply(replyText) : undefined;
+  const awake = step === 1 ? wake === 'awake' : status === 'done';
+
+  if (wake === 'unwell') {
+    // 体調が悪い: 起こす声かけを止めて朝の流れを終える。家族へは 1 回だけ（痛み・至急の通知を出したターンは重ねない）
+    let n: Notice | null = null;
+    if (!a.alerted) {
+      n = await safeNotify(ctx, {
+        hh, date, level: 'check', origin: 'other', task, turnId, now,
+        reason: MORNING_UNWELL_REASON,
+        evidence: `${hm(now)} 起こす声かけへのお返事「${excerpt(replyText, 30)}」`,
+      });
+      if (n) notices.push(n);
+    }
+    await appendLedger(ctx, {
+      hh, date, at: now, kind: 'system', name: 'morning_step', turnId, noticeId: n?.id ?? null,
+      args: { step, task, result: status, wake, repeats: m.repeats, ...(n ? { notified: true } : {}) },
+    });
+    logEvent('morning_step', { hh, date, step, task, result: status, wake, repeats: m.repeats });
+    await finishMorning(ctx, hh, date, { morning: m, tasks }, 'cutoff', now, 'unwell');
+    return { notices, advanced: false, step: null, wake };
+  }
 
   if (awake) {
     await markDone(task);
@@ -382,26 +542,36 @@ export async function applyMorningReply(
     }
     const next: DayMorning = { step: nextStep, startedAt: m.startedAt, repeats: 0, result: null };
     await saveMorning(ctx, hh, date, next);
-    return { notices, advanced: true, step: nextStep };
+    return { notices, advanced: true, step: nextStep, ...(wake ? { wake } : {}) };
   }
 
   // 取れなかった: この工程で待つ（rechecking）。上限に達していれば家族へ 1 回だけ
   const rec: TaskRecord = { ...(tasks[task] ?? emptyRecord()), state: 'rechecking' };
   tasks[task] = rec;
   await ctx.store.setTask(hh, date, task, rec);
+  // 工程②〜④の not_yet は、次の声かけを stepFollowupMinutes 分後に確認の言い回しで（返事なし・判定できないは元の声かけを 5 分後）
+  const notYet = step >= 2 && status === 'not_yet';
   let next: DayMorning = m;
+  if (step >= 2 && Boolean(m.awaitingDone) !== notYet) {
+    next = { ...m };
+    if (notYet) next.awaitingDone = true; else delete next.awaitingDone;
+    await saveMorning(ctx, hh, date, next);
+  }
   const policy = morningPolicyOf(household);
   if (m.repeats >= maxRepeatsOf(policy, step) && !m.notified) {
     const n = await notifyCapped(ctx, household, { date }, m, now, turnId, { text: replyText, status });
     if (n) notices.push(n);
-    next = { ...m, notified: true, ...(n ? { noticeId: n.id } : {}) };
+    next = { ...next, notified: true, ...(n ? { noticeId: n.id } : {}) };
     await saveMorning(ctx, hh, date, next);
   }
   await appendLedger(ctx, {
     hh, date, at: now, kind: 'system', name: 'morning_step', turnId,
-    args: { step, task, result: status, repeats: m.repeats, ...(next.notified && !m.notified ? { notified: true } : {}) },
+    args: {
+      step, task, result: status, repeats: m.repeats, ...(wake ? { wake } : {}), ...(notYet ? { awaitingDone: true } : {}),
+      ...(next.notified && !m.notified ? { notified: true } : {}),
+    },
   });
-  logEvent('morning_step', { hh, date, step, task, result: status, repeats: m.repeats });
-  return { notices, advanced: false, step };
+  logEvent('morning_step', { hh, date, step, task, result: status, repeats: m.repeats, wake: wake ?? null });
+  return { notices, advanced: false, step, ...(wake ? { wake } : {}), ...(notYet ? { notYet } : {}) };
 }
 

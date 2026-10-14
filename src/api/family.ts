@@ -117,15 +117,17 @@ export const SettingsSchema = z.object({
     idleChatMinutes: z.number().int().min(0).max(600).optional(),
     noAnswerUrgent: z.boolean().optional(),
     utteranceChat: z.boolean().optional(),
-    morning: z.object({ enabled: z.boolean(), startTime: HHMM, endTime: HHMM, wakeRepeatMinutes: z.number().int().min(1).max(30), wakeMaxRepeats: z.number().int().min(1).max(60), stepRepeatMinutes: z.number().int().min(1).max(60), stepMaxRepeats: z.number().int().min(1).max(20), wakeTexts: z.array(z.string().min(1).max(120)).min(1).max(10).optional() }).optional(),
+    morning: z.object({ enabled: z.boolean(), startTime: HHMM, endTime: HHMM, wakeRepeatMinutes: z.number().int().min(1).max(30), wakeMaxRepeats: z.number().int().min(1).max(60), stepRepeatMinutes: z.number().int().min(1).max(60), stepMaxRepeats: z.number().int().min(1).max(20), stepFollowupMinutes: z.number().int().min(1).max(60).default(2), wakeTexts: z.array(z.string().min(1).max(120)).min(1).max(10).optional(), refuseSay: z.string().min(1).max(120).optional(), notYetSay: z.string().min(1).max(120).optional(), followupTexts: z.partialRecord(z.enum(TASK_KEYS), z.string().min(1).max(120)).optional() }).optional(),
     /** お風呂モードの間隔（分。docs/02 §11.3） */
     bath: z.object({
-      washAfterMinutes: z.number().int().min(1).max(120),
       teethAfterMinutes: z.number().int().min(1).max(120),
-      returnAfterMinutes: z.number().int().min(1).max(120),
+      washAfterMinutes: z.number().int().min(1).max(120),
+      /** 体を洗ってから「お風呂を出ませんか」まで。省略時は旧名 returnAfterMinutes、それも無ければ 15 */
+      exitAfterMinutes: z.number().int().min(1).max(120).optional(),
+      returnAfterMinutes: z.number().int().min(1).max(120).optional(),
       recheckMinutes: z.number().int().min(1).max(30),
       notifyAfterMinutes: z.number().int().min(1).max(60),
-    }).optional(),
+    }).transform(({ returnAfterMinutes, exitAfterMinutes, ...b }) => ({ ...b, exitAfterMinutes: exitAfterMinutes ?? returnAfterMinutes ?? 15 })).optional(),
   }).optional(),
   /** 通知文に書く連絡先。空文字で消す */
   contacts: z.object({
