@@ -504,11 +504,15 @@ test('モード・居場所・発話: device/mode と family/mode の往復、fa
   assert.equal(today.json.bath.startedAt, now.toISOString());
   assert.equal(today.json.whereabouts.place, 'お仕事');
 
-  // 洗う「はい」→ 戻りの予約 → /internal/bath-return
-  now = new Date('2026-10-01T19:40:00+09:00');
+  // 5 分後に歯磨き（返事は任意）→ 15 分後に洗う「はい」→ 戻りの予約 → /internal/bath-return
+  now = new Date('2026-10-01T19:35:00+09:00');
+  const teeth = await call(router, mockReq({ path: '/api/device/next-prompt', headers: dev }));
+  assert.equal(teeth.json.prompt.bathStep, 'teeth');
+  assert.equal(teeth.json.prompt.text, '歯を磨きましょう');
+  now = new Date('2026-10-01T19:45:00+09:00');
   const wash = await call(router, mockReq({ path: '/api/device/next-prompt', headers: dev }));
   assert.equal(wash.json.prompt.bathStep, 'wash');
-  now = new Date('2026-10-01T19:41:00+09:00');
+  now = new Date('2026-10-01T19:46:00+09:00');
   const rep = await call(router, mockReq({ method: 'POST', path: '/api/device/reply', headers: dev, body: { promptId: wash.json.prompt.id, text: 'はい' } }));
   assert.equal(rep.status, 200, rep.text);
   assert.equal(rep.json.say, 'ゆっくりどうぞ。');

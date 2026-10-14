@@ -36,6 +36,8 @@ export const config = {
   ttsMode: (env('TTS_MODE', 'device') as TtsMode),
   ttsVoice: env('TTS_VOICE', 'ja-JP-Neural2-B'),
   ttsTimeoutMs: Number(env('TTS_TIMEOUT_MS', '8000')),
+  /** Cloud TTS の音量の増幅（dB、-96〜16）。iPad のスピーカーが小さいときに上げる */
+  ttsGainDb: Number(env('TTS_GAIN_DB', '6')),
   llmTimeoutMs: Number(env('LLM_TIMEOUT_MS', '20000')),
   agentMode: (env('AGENT_MODE', 'adk') as AgentMode),
 

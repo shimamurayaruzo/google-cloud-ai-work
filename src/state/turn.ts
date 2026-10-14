@@ -7,7 +7,10 @@
 //  - L4 モード中の返事は LLM を呼ばず、台帳と通知の根拠に追記するだけ（質問しない。一言は安心文）
 //  - 痛みの言葉は 3 時間後の聞き直し（followup）を予約する。聞き直しへの返事は規則で扱う
 //  - 朝の流れ（prompt.morningStep。state/morning.ts）の声かけへの返事は、分類と L4・痛みの通知はいつもどおりだが、
-//    段階表（L2/L3/L4）と再確認の予約には乗せず、朝の流れの工程を進める／同じ工程で待つ
+//    段階表（L2/L3/L4）と再確認の予約には乗せず、朝の流れの工程を進める／同じ工程で待つ。
+//    工程①（起こす）の分類は規則（classifyWakeReply）で決め直し、工程②〜④の「今から替える」等は not_yet に揃える。
+//    一言: 起きたくない → refuseSay、体調が悪い → 「無理をしないで、横になっていてください」、判定できない → なし、
+//    工程②〜④の not_yet → notYetSay（「では、できたら教えてくださいね」）
 
 import { logError, logEvent } from '../log.js';
 import type { AppContext, Intent, NotifyRequest, TurnInput, TurnOutcome } from '../services.js';
@@ -27,7 +30,9 @@ import { currentL4, startL4 } from './l4.js';
 import { canRecheck, transition, type StageNotice } from './machine.js';
 import { defaultPromptText, findPlanItem, inSleepHours, recheckIntervalMinutes } from './plan.js';
 import { processBathReply } from './mode.js';
-import { MORNING_AWAKE_SAY, applyMorningReply } from './morning.js';
+import {
+  MORNING_AWAKE_SAY, MORNING_UNWELL_SAY, applyMorningReply, normalizeMorningOutcome, notYetSayOf, refuseSayOf, type WakeReply,
+} from './morning.js';
 import { handleUtterance } from './utterance.js';
 
 export { NotFoundError };
@@ -116,7 +121,9 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
   };
   // 運用エージェントが LLM を規則へ切り替えている間は、規則だけで分類する（docs/02 §7）
   const degraded = currentDegraded(await ctx.store.getHealth(hh, dateKey(now)), now);
-  const runner = degraded?.llm === 'rules' ? rulesRunner() : ctx.turnRunner;
+  // 朝の流れの返事（起きた／替えた／まだ 等）は規則で十分に判定でき、LLM の遅延（夜間に 15〜20 秒）を母に待たせないよう規則で分類する。
+  // 至急・痛みの語も規則側で拾う
+  const runner = (degraded?.llm === 'rules' || morning) ? rulesRunner() : ctx.turnRunner;
   let outcome: TurnOutcome;
   try {
     outcome = await runner.run(input);
@@ -124,6 +131,11 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
     // 会話ターンが落ちても本人を待たせない。判定せず unclear にして再確認へ（docs/02 §7）
     logError('turn_runner_failed', error, { hh, date, task });
     outcome = fallbackOutcome(input, error);
+  }
+  // 朝の流れ: 工程①の分類は規則で決める（起きた／起きたくない／体調が悪い／どれでもない）。②〜④の「これからする」は not_yet
+  const runnerStatus = outcome.classified.status;
+  if (morning && prompt.morningStep != null) {
+    outcome = normalizeMorningOutcome(prompt.morningStep, replyText, outcome).outcome;
   }
 
   const turnId = newId('tn');
@@ -163,10 +175,26 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
     expression = 'worry';
   } else if (applied.finalStage) {
     say = FINAL_SAY;
-  } else if (applied.morningAwake) {
-    // 起こす声かけに返事があった（「まだ眠い」等でも起きたとみなす）。次の工程の声かけはすぐ届く
-    say = MORNING_AWAKE_SAY;
-    expression = 'smile';
+  } else if (applied.morningWake === 'awake') {
+    // 起こす声かけに「起きた」の返事。会話ターンが済みと判定しなかったときだけ定型の挨拶（次の工程の声かけはすぐ届く）
+    if (runnerStatus !== 'done') {
+      say = MORNING_AWAKE_SAY;
+      expression = 'smile';
+    }
+  } else if (applied.morningWake === 'unwell') {
+    // 体調が悪い: 起こすのをやめる。家族に知らせたことは本人に言わない
+    say = MORNING_UNWELL_SAY;
+    expression = 'worry';
+  } else if (applied.morningWake === 'refuse' && !applied.alerted) {
+    say = refuseSayOf(household);
+    expression = 'listen';
+  } else if (applied.morningWake === 'none' && !applied.alerted && !applied.contactRequested) {
+    // 判定できない返事（テレビの音など）: 返事なしと同じ扱いで、一言は言わない
+    say = '';
+    expression = 'think';
+  } else if (applied.morningNotYet && !applied.alerted && !applied.contactRequested) {
+    say = notYetSayOf(household);
+    expression = 'listen';
   }
   if (say !== turn.say || expression !== turn.expression) {
     turn.say = say;
@@ -249,8 +277,14 @@ interface ApplyResult {
   finalStage?: boolean;
   /** L4 を立てた由来（l4_words / fire / no_answer） */
   l4Started?: string;
-  /** 朝の流れの起こす声かけに、済み以外の返事（「まだ眠い」等）で起きたとみなした */
-  morningAwake?: boolean;
+  /** 朝の流れの工程①（起こす）への返事の種類 */
+  morningWake?: WakeReply;
+  /** 朝の流れの工程②〜④で not_yet（一言は notYetSay） */
+  morningNotYet?: boolean;
+  /** 痛み・至急の通知を出したターン */
+  alerted?: boolean;
+  /** 本人から外部への連絡を頼まれたターン（会話ターンの一言を残す） */
+  contactRequested?: boolean;
 }
 
 async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult> {
@@ -318,13 +352,15 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
   }
 
   // ---- 朝の流れ: 工程を進める／同じ工程で待つ。上限で家族へ check を 1 回（段階表は使わない） ----
-  let morningAwake = false;
+  let morningWake: WakeReply | undefined;
+  let morningNotYet = false;
   if (morning) {
     const mr = await applyMorningReply(ctx, {
-      household, day, prompt, tasks, status: outcome.classified.status, replyText: a.replyText, turnId, now,
+      household, day, prompt, tasks, status: outcome.classified.status, replyText: a.replyText, turnId, now, alerted,
     });
     notices.push(...mr.notices);
-    morningAwake = mr.advanced && prompt.morningStep === 1 && outcome.classified.status !== 'done' && !alerted;
+    morningWake = mr.wake;
+    morningNotYet = Boolean(mr.notYet);
   }
 
   // ---- 再確認: この声かけの項目が今のターンで rechecking に入ったときだけ予約する ----
@@ -409,7 +445,10 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
     ...(stage ? { stage: stage.stage } : {}),
     ...(finalStage ? { finalStage } : {}),
     ...(l4Started ? { l4Started } : {}),
-    ...(morningAwake ? { morningAwake } : {}),
+    ...(morningWake ? { morningWake } : {}),
+    ...(morningNotYet ? { morningNotYet } : {}),
+    ...(alerted ? { alerted } : {}),
+    ...(notifyIntents.some(i => i.origin === 'contact') ? { contactRequested: true } : {}),
   };
 }
 

@@ -202,7 +202,7 @@ function buildDay(h: Household, date: string, index: number, spike: boolean): Da
     if (kind === 'departure_info' && !isDayservice) kind = 'bath_info';
     if (kind === 'bath_info') {
       const t = addTurn('bath', '20:10', 'はい', 'done', { text: 'そろそろ体を洗いましょうか', say: 'ゆっくりどうぞ。' });
-      addNotice('info', 'bath', '体を洗い始めました', 'はい', t);
+      addNotice('info', 'bath', '体を洗う', 'はい', t);
     } else if (kind === 'departure_info') {
       const t = addTurn('pickup', '09:00', '来たよ、行ってきます', 'done');
       addNotice('info', 'departure', '準備完了、デイへ出発', '来たよ、行ってきます', t);

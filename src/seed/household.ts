@@ -83,13 +83,16 @@ export function defaultHousehold(id: HouseholdId = config.defaultHouseholdId): H
       idleChatMinutes: 90,
       noAnswerUrgent: true,
       // お風呂モードの間隔（docs/02 §11.3）
-      bath: { washAfterMinutes: 10, teethAfterMinutes: 15, returnAfterMinutes: 10, recheckMinutes: 2, notifyAfterMinutes: 5 },
+      // 2026-10-14 家族の要望: 切替 5 分後に歯磨き → 15 分後に体を洗う → 洗って 15 分後に「お風呂を出ませんか」
+      bath: { teethAfterMinutes: 5, washAfterMinutes: 15, exitAfterMinutes: 15, recheckMinutes: 2, notifyAfterMinutes: 5 },
       // 朝の流れ（docs/03 §5、2026-10-14）。8:00 から 起こす → おむつ → 洗顔・歯磨き → 着替え を、返事があってから順に。
       // この間（〜10:30）の上の計画の greeting / diaper / teeth / face / dress / belongings は時刻では出さない
       morning: {
         enabled: true, startTime: '08:00', endTime: '10:30',
         // 起こす声かけは 1 分おき・60 分ぶん（2026-10-14 家族の追加の要望）。文言は state/morning.ts の既定（wakeTexts で変えられる）
         wakeRepeatMinutes: 1, wakeMaxRepeats: 60, stepRepeatMinutes: 5, stepMaxRepeats: 6,
+        // 工程②〜④で「まだ」「今から替える」等のときは 2 分後に「〜できましたか？」と確認する（2026-10-14 夜の要望）
+        stepFollowupMinutes: 2,
       },
     },
     // 通知文に書く連絡先（家の電話・近くの人）は個人情報なのでここには書かない。家族画面の設定から入れる

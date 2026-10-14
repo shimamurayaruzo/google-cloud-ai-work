@@ -154,11 +154,19 @@ export interface MorningPolicy {
   stepRepeatMinutes: number;
   /** 工程②〜④の声かけの上限（回。既定 6） */
   stepMaxRepeats: number;
+  /** 工程②〜④で「まだ」「今から替える」等（not_yet）のとき、確認の言い回しで聞き直すまでの分（既定 2。返事なしは stepRepeatMinutes） */
+  stepFollowupMinutes: number;
   /**
    * 起こす声かけの文言（緊迫感のある言い方。1 回目から順に使い、最後まで行ったら最初に戻る）。
    * {name} は person.wakeName（無ければ callName）、{hour} はその時刻の「時」（例 8）に置き換える。省略時は state/morning.ts の既定 3 つ
    */
   wakeTexts?: string[];
+  /** 起こす声かけに「起きたくない」「まだ寝たい」等のときの一言（省略時は state/morning.ts の既定「がんばって起きてください。それとも体調が悪いのですか？」） */
+  refuseSay?: string;
+  /** 工程②〜④で not_yet のときの一言（省略時「では、できたら教えてくださいね」） */
+  notYetSay?: string;
+  /** 工程②〜④で not_yet のあと stepFollowupMinutes 分後に出す確認の言い回し（項目ごと。省略した項目は state/morning.ts の既定） */
+  followupTexts?: Partial<Record<TaskKey, string>>;
 }
 
 /** その日の朝の流れの進み具合（state/morning.ts） */
@@ -170,6 +178,8 @@ export interface DayMorning {
   stepAskedAt?: Date;
   /** いまの工程の声かけを話した回数（工程が進むと 0） */
   repeats: number;
+  /** 工程②〜④で最後の返事が not_yet（「まだ」「今から替える」等）。次の声かけは stepFollowupMinutes 分後に確認の言い回しで */
+  awaitingDone?: boolean;
   /** いまの工程で、上限に達して家族へ確認のお願い（check）を送った */
   notified?: boolean;
   /** そのお願いの通知。家族が「確認した」を押したら、同じ工程の声かけをもう一度始める */
@@ -185,12 +195,14 @@ export type HouseholdMode = 'bedroom' | 'bath';
 export type ModeChangedBy = 'device' | 'family' | 'system';
 
 export interface BathPolicy {
-  /** 切替から「そろそろ体を洗いましょうか」まで */
-  washAfterMinutes: number;
-  /** 体を洗い始めてから「歯を磨きましょう」まで */
+  /** 切替から「歯を磨きましょう」まで（既定 5） */
   teethAfterMinutes: number;
-  /** 歯磨きの声かけから寝室へ自動で戻るまで */
-  returnAfterMinutes: number;
+  /** 切替から「そろそろ体を洗いましょうか」まで（既定 15） */
+  washAfterMinutes: number;
+  /** 体を洗った（洗う声かけに「はい」）から「そろそろお風呂を出ませんか？」まで（既定 15） */
+  exitAfterMinutes: number;
+  /** 旧名（2026-10-14 まで「歯磨きから上がりましたかまで」）。exitAfterMinutes が無いときだけ、その値として読む */
+  returnAfterMinutes?: number;
   /** 「まだ」・返事なしの再確認まで（1 回だけ） */
   recheckMinutes: number;
   /** 「体を洗いましょうか」から、返事が無いときに家族へ check を送るまでの上限 */

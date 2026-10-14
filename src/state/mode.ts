@@ -2,22 +2,23 @@
 // 時刻による自動切替はしない（お風呂から寝室への自動の戻りだけは、お風呂の流れの最後に行う。「上がった」・返事なしは
 // 返事を処理したその場で、「まだ」のあとと時間切れは /internal/bath-return で）。
 //
-// お風呂モード（§11.3。iPad は脱衣所。安全確認の場にしない）:
-//   切替直後          「お風呂の時間ですね。ゆっくりどうぞ」（返事は聞かない）。寝室の声かけは配信しない（queued のまま）
-//   +washAfterMinutes 「そろそろ体を洗いましょうか」
-//                       はい等 → washDoneAt、家族へ L2 info「体を洗い始めました」（origin bath）、本人には「ゆっくりどうぞ」
+// お風呂モード（§11.3。iPad は脱衣所。安全確認の場にしない。2026-10-14 家族の要望で 歯磨き → 体を洗う → 出る の順）:
+//   切替直後           「お風呂の時間ですね。ゆっくりどうぞ」（返事は聞かない）。寝室の声かけは配信しない（queued のまま）
+//   +teethAfterMinutes（5）「歯を磨きましょう」… 返事は任意。記録のみ、通知しない。返事が無くても次へ
+//   +washAfterMinutes（15）「そろそろ体を洗いましょうか」
+//                       はい等 → washDoneAt、家族へ L2 info「体を洗う」（origin bath。根拠に時刻と抜粋）、本人には「ゆっくりどうぞ」
 //                       まだ   → recheckMinutes（2 分）後に再確認を 1 回
 //                       返事なし → 2 分後に再確認。それも返事なしなら L3 check「お風呂で声かけに返事がありません。様子を見に行ってください」
 //                                 L4 にはしない（criteria 3-3「入浴中の無反応」。基準 v2 の段階表ではなく、この流れを使う）
-//   +teethAfterMinutes「歯を磨きましょう」… 記録のみ。通知しない
-//   +returnAfterMinutes「お風呂から上がりましたか？」（bathStep exit。2026-10-07 島村さん「お風呂を出るときに LINE で知らせてほしい」）
-//                       はい・上がった・出たよ等 → 家族へ L2 info「お風呂から上がりました」、本人には「ゆっくり休んでくださいね」、
+//   体を洗った +exitAfterMinutes（15）「そろそろお風呂を出ませんか？」（bathStep exit。2026-10-07 島村さん「お風呂を出るときに LINE で知らせてほしい」）
+//                       はい・出ます・上がった等 → 家族へ L2 info「お風呂を出た」、本人には「ゆっくり休んでくださいね」、
 //                                その場で寝室へ（by system）
-//                       まだ   → 5 分後にもう一度だけ。それも「まだ」なら returnAfterMinutes 後に寝室へ戻し、そのとき info
+//                       まだ   → 5 分後にもう一度だけ。それも「まだ」なら 10 分後に寝室へ戻し、そのとき info
 //                                「お風呂モードを終えました（まだ入っているとのことでした）」
 //                       返事なし → recheckMinutes（2 分）後に再確認。それも返事なしなら寝室へ戻し、
 //                                L3 check「お風呂から上がったか確認できませんでした。様子を見に行ってください」（L4 にはしない）
-//   時間切れ: 「上がりましたか」の予定から BATH_EXIT_TIMEOUT_MINUTES で寝室へ戻す（/internal/bath-return。端末が声かけを
+//   洗う声かけが「はい」にならなかった（再確認も「まだ」・2 回とも返事なし）ときは、そこから exitAfterMinutes 後に「出ませんか」
+//   時間切れ: 「出ませんか」の予定から BATH_EXIT_TIMEOUT_MINUTES で寝室へ戻す（/internal/bath-return。端末が声かけを
 //            取りに来ないときの保険。知らせない）
 //   家族が途中で寝室へ戻したときは知らせない（押した家族は知っている）。台帳 mode_changed に reason: manual を残す
 //   お風呂の間の L4 の語・痛みの語は寝室と同じ（urgent / check）。
@@ -47,7 +48,7 @@ import { TURN_TTL_MINUTES, safeNotify, scheduleFollowup, type ProcessReplyResult
 import { currentWhereabouts, whereaboutsSay } from './whereabouts.js';
 
 export const DEFAULT_BATH_POLICY: Readonly<BathPolicy> = {
-  washAfterMinutes: 10, teethAfterMinutes: 15, returnAfterMinutes: 10, recheckMinutes: 2, notifyAfterMinutes: 5,
+  teethAfterMinutes: 5, washAfterMinutes: 15, exitAfterMinutes: 15, recheckMinutes: 2, notifyAfterMinutes: 5,
 };
 export const DEFAULT_IDLE_CHAT_MINUTES = 90;
 /** ときたまの声かけを出さない「計画の声かけの前後」の幅（分） */
@@ -61,16 +62,18 @@ export const BATH_WASH_RECHECK_TEXT = '体を洗えそうですか？';
 export const BATH_TEETH_TEXT = '歯を磨きましょう';
 export const BATH_END_SAY = 'ゆっくり休んでくださいね';
 export const BATH_DONE_SAY = 'ゆっくりどうぞ。';
-export const BATH_DONE_REASON = '体を洗い始めました';
+export const BATH_DONE_REASON = '体を洗う';
 export const BATH_NO_ANSWER_REASON = 'お風呂で声かけに返事がありません。様子を見に行ってください';
-export const BATH_EXIT_TEXT = 'お風呂から上がりましたか？';
-export const BATH_EXIT_DONE_REASON = 'お風呂から上がりました';
+export const BATH_EXIT_TEXT = 'そろそろお風呂を出ませんか？';
+export const BATH_EXIT_DONE_REASON = 'お風呂を出た';
 export const BATH_EXIT_NOT_YET_REASON = 'お風呂モードを終えました（まだ入っているとのことでした）';
 export const BATH_EXIT_UNCLEAR_REASON = 'お風呂モードを終えました（上がったかははっきりしませんでした）';
 export const BATH_EXIT_NO_ANSWER_REASON = 'お風呂から上がったか確認できませんでした。様子を見に行ってください';
-/** 「上がりましたか」に「まだ」のとき、もう一度聞くまで（分） */
+/** 「出ませんか」に「まだ」のとき、もう一度聞くまで（分） */
 export const BATH_EXIT_NOT_YET_RECHECK_MINUTES = 5;
-/** 「上がりましたか」の予定から、時間切れで寝室へ戻すまで（分。上がったかの流れが終わらなかったときの保険） */
+/** 「出ませんか」に 2 回とも「まだ」のとき、寝室へ戻すまで（分） */
+export const BATH_EXIT_NOT_YET_RETURN_MINUTES = 10;
+/** 「出ませんか」の予定から、時間切れで寝室へ戻すまで（分。出たかの流れが終わらなかったときの保険） */
 export const BATH_EXIT_TIMEOUT_MINUTES = 30;
 export const IDLE_WATER_TEXT = 'お水を一口どうですか';
 
@@ -82,13 +85,13 @@ function minutesOr(v: unknown, fallback: number, min = 0): number {
   return typeof v === 'number' && Number.isFinite(v) && v >= min ? Math.round(v) : fallback;
 }
 
-/** お風呂モードの間隔（未設定の項目は既定 10/15/10/2/5） */
+/** お風呂モードの間隔（未設定の項目は既定 歯磨き 5／洗う 15／出る 15／再確認 2／通知 5）。旧名 returnAfterMinutes は exitAfterMinutes として読む */
 export function bathPolicyOf(h: Pick<Household, 'policy'>): BathPolicy {
   const b: Partial<BathPolicy> = h.policy?.bath ?? {};
   return {
-    washAfterMinutes: minutesOr(b.washAfterMinutes, DEFAULT_BATH_POLICY.washAfterMinutes, 1),
     teethAfterMinutes: minutesOr(b.teethAfterMinutes, DEFAULT_BATH_POLICY.teethAfterMinutes, 1),
-    returnAfterMinutes: minutesOr(b.returnAfterMinutes, DEFAULT_BATH_POLICY.returnAfterMinutes, 1),
+    washAfterMinutes: minutesOr(b.washAfterMinutes, DEFAULT_BATH_POLICY.washAfterMinutes, 1),
+    exitAfterMinutes: minutesOr(b.exitAfterMinutes ?? b.returnAfterMinutes, DEFAULT_BATH_POLICY.exitAfterMinutes, 1),
     recheckMinutes: minutesOr(b.recheckMinutes, DEFAULT_BATH_POLICY.recheckMinutes, 1),
     notifyAfterMinutes: minutesOr(b.notifyAfterMinutes, DEFAULT_BATH_POLICY.notifyAfterMinutes, 1),
   };
@@ -143,7 +146,7 @@ export interface SwitchModeResult {
   /** 切り替えで積んだ最初の一言（端末へは next-prompt で届く）。同じモードへの切替・停止中は無し */
   say?: string;
   changed: boolean;
-  /** 寝室へ戻したときに家族へ送った知らせ（「上がりましたか」に「まだ」のまま時間で終えたとき） */
+  /** 寝室へ戻したときに家族へ送った知らせ（「出ませんか」に「まだ」のまま時間で終えたとき） */
   notice?: Notice;
 }
 
@@ -156,10 +159,11 @@ export interface SwitchModeOptions {
 
 /**
  * 起動モードを切り替える。同じモードへの切替は何もしない。停止中（killSwitch）でも切替はする（声かけは積まない）。
- *  bedroom → bath: bath = { startedAt }。最初の一言（返事を求めない）と +washAfterMinutes の「体を洗いましょうか」を積む。
+ *  bedroom → bath: bath = { startedAt }。最初の一言（返事を求めない）と +teethAfterMinutes の「歯を磨きましょう」、
+ *                  +washAfterMinutes の「体を洗いましょうか」を積む。
  *                  話したまま返事を待っている寝室の声かけは、無反応として扱わないように expired にする（前のお風呂の残りも）
  *  bath → bedroom: bath = null。お風呂の残りの声かけと、30 分以上前に期限が来た寝室の声かけを expired。「ゆっくり休んでくださいね」を積む。
- *                  system で、「上がりましたか」に「まだ」のまま終えるとき（bath.returnReason）だけ、ここで家族へ info。
+ *                  system で、「出ませんか」に「まだ」のまま終えるとき（bath.returnReason）だけ、ここで家族へ info。
  *                  家族・端末の操作（manual）では知らせない（台帳 mode_changed の args.reason に残す）
  */
 export async function switchMode(
@@ -194,6 +198,7 @@ export async function switchMode(
     if (!before.killSwitch) {
       const policy = bathPolicyOf(before);
       await enqueueBathPrompt(ctx, hh, 'start', now);
+      await enqueueBathPrompt(ctx, hh, 'teeth', addMinutes(now, policy.teethAfterMinutes));
       await enqueueBathPrompt(ctx, hh, 'wash', addMinutes(now, policy.washAfterMinutes));
       say = BATH_START_SAY;
     }
@@ -236,7 +241,7 @@ export async function switchMode(
   return { household: await requireHousehold(ctx, hh), ...(say ? { say } : {}), changed: true, ...(notice ? { notice } : {}) };
 }
 
-/** 「上がりましたか」への返事を時刻つきで並べる（例「20:06「まだ」／20:11「まだよ」（20:21 に寝室モードへ戻しました）」） */
+/** 「出ませんか」への返事を時刻つきで並べる（例「20:06「まだ」／20:11「まだよ」（20:21 に寝室モードへ戻しました）」） */
 async function exitEvidence(
   ctx: Pick<AppContext, 'store'>, hh: HouseholdId, date: DateKey, bath: BathState, now: Date,
 ): Promise<string> {
@@ -256,7 +261,7 @@ export function bathReturnOverdue(h: Pick<Household, 'mode' | 'bath'>, now: Date
 }
 
 /**
- * /internal/bath-return: お風呂から寝室へ自動で戻す（by system）。時間切れと、「上がりましたか」に「まだ」が 2 回続いたあとの戻り。
+ * /internal/bath-return: お風呂から寝室へ自動で戻す（by system）。時間切れと、「出ませんか」に「まだ」が 2 回続いたあとの戻り。
  * 予約したときのお風呂（startedAt）と今のお風呂が違えば何もしない（家族が切り替え直したあとの古い予約）。
  * 戻りの時刻（bath.returnAt）が後ろへずれていれば何もしない（先に積んだ時間切れの予約。新しい予約が後で届く）。
  * 家族へ知らせるかは bath.returnReason で決める（予約の body の reason は記録用。渡されなくても同じに動く）。
@@ -280,7 +285,7 @@ export async function handleBathReturn(
   return { switched: r.changed, household: r.household, ...(r.notice ? { notice: r.notice } : {}) };
 }
 
-/** 声かけを話したとき（day.ts の deliverPrompt）: 洗う・歯磨き・上がりましたか（最初の 1 回）の時刻を bath に残す */
+/** 声かけを話したとき（day.ts の deliverPrompt）: 洗う・歯磨き・出ませんか（最初の 1 回）の時刻を bath に残す */
 export async function noteBathPromptDelivered(ctx: Pick<AppContext, 'store'>, prompt: Prompt, now: Date): Promise<void> {
   if (prompt.bathStep !== 'wash' && prompt.bathStep !== 'teeth' && prompt.bathStep !== 'exit') return;
   const h = await ctx.store.getHousehold(prompt.hh);
@@ -295,19 +300,21 @@ export async function noteBathPromptDelivered(ctx: Pick<AppContext, 'store'>, pr
 }
 
 // ---------------------------------------------------------------------------
-// お風呂の声かけへの返事（state/turn.ts の processReply から。洗う・その再確認・歯磨き・上がりましたか）
+// お風呂の声かけへの返事（state/turn.ts の processReply から。洗う・その再確認・歯磨き・出ませんか）
 // ---------------------------------------------------------------------------
 
-/** 「上がりましたか」に「まだ入ってる」「洗ってる」→ まだ */
+/** 「出ませんか」に「まだ入ってる」「洗ってる」→ まだ */
 const EXIT_STILL = /(入って|はいって|浸かって|つかって|洗って|あらって)(る|います|いる|ます)/;
-/** 「上がった」「出たよ」→ 上がった（規則の語彙に無いのでここで足す） */
-const EXIT_DONE = /上が(った|りました|れた|りましたよ)|あがった|あがりました|出た|でた|出ました|でました|出られた/;
+/** 「出たくない」「出ない」「上がれない」→ まだ（「出た」を含むので先に見る） */
+const EXIT_NOT = /(出|で|上が|あが)(たくない|ない|ません|られない|れない)/;
+/** 「出ます」「上がった」「出たよ」→ 出た（規則の語彙に無いのでここで足す） */
+const EXIT_DONE = /上が(った|りました|れた|ります|る)|あがった|あがりました|あがります|あがる|出た|でた|出ました|でました|出られた|出ます|でます|出る|でる/;
 
-/** 「お風呂から上がりましたか？」への返事の分類（規則の分類に、お風呂を出る言い方だけ足す） */
+/** 「そろそろお風呂を出ませんか？」への返事の分類（規則の分類に、お風呂を出る言い方だけ足す） */
 export function exitReplyStatus(replyText: string | null, base: Classification): Classification {
   const t = (replyText ?? '').trim();
   if (!t || base === 'no_answer' || base === 'not_yet' || isLikelyNotPerson(t)) return base;
-  if (EXIT_STILL.test(t)) return 'not_yet';
+  if (EXIT_STILL.test(t) || EXIT_NOT.test(t)) return 'not_yet';
   if (base === 'unclear' && EXIT_DONE.test(t)) return 'done';
   return base;
 }
@@ -396,13 +403,14 @@ export async function processBathReply(
         bath.washDoneAt = now;
         if (!alerted) {
           const n = await safeNotify(ctx, {
-            hh, date, level: 'info', reason: BATH_DONE_REASON, evidence: ruleExcerpt(replyText, 30), turnId, task, now, origin: 'bath',
+            hh, date, level: 'info', reason: BATH_DONE_REASON,
+            evidence: `${hm(now)}「${ruleExcerpt(replyText, 30)}」`, turnId, task, now, origin: 'bath',
           });
           if (n) notices.push(n);
           // 本人には「ゆっくりどうぞ」だけ。「家族に知らせました」とは言わない
           say = BATH_DONE_SAY; expression = 'smile';
         }
-        bath = await scheduleTeethAndExit(ctx, hh, bath, now, policy, true);
+        bath = await scheduleExit(ctx, hh, bath, now, policy);
       } else if (step === 'wash') {
         // まだ・返事なし・判定できない → 声かけから 2 分後に 1 回だけ再確認（返事なしの締めが遅れたときは今すぐ）
         const askedAt = prompt.deliveredAt ? asDate(prompt.deliveredAt)! : now;
@@ -428,20 +436,20 @@ export async function processBathReply(
         }
         state = 'escalated';
         note = 'お風呂の声かけに 2 回返事なし（家族へ確認のお願い。L4 にはしない）';
-        bath = await scheduleTeethAndExit(ctx, hh, bath, now, policy, false);
+        bath = await scheduleExit(ctx, hh, bath, now, policy);
       } else {
-        // 再確認でも「まだ」等 → 記録して、そのまま歯磨きと「上がりましたか」へ進む（3 回目は聞かない）
+        // 再確認でも「まだ」等 → 記録して、そのまま「出ませんか」へ進む（3 回目は聞かない）
         if (!alerted) { say = 'わかりました。'; expression = 'listen'; }
-        bath = await scheduleTeethAndExit(ctx, hh, bath, now, policy, true);
+        bath = await scheduleExit(ctx, hh, bath, now, policy);
       }
     } else if (step === 'teeth' && !alerted) {
-      // 歯磨きは記録のみ。通知しない
+      // 歯磨きは記録のみ。通知しない（返事が無くても体を洗う声かけは時刻どおり）
       say = status === 'done' ? '歯磨き、できましたね。すっきりしましたね。' : status === 'not_yet' ? 'わかりました。' : '';
       expression = status === 'done' ? 'smile' : 'listen';
     } else if (step === 'exit') {
       const since = asDate(bath.exitAskedAt) ?? asDate(prompt.deliveredAt) ?? prompt.scheduledAt;
       if (status === 'done') {
-        // 上がった → 家族へ info、本人には「ゆっくり休んでくださいね」、その場で寝室へ
+        // 出た → 家族へ info「お風呂を出た」、本人には「ゆっくり休んでくださいね」、その場で寝室へ
         bath.exitDoneAt = now;
         if (!alerted) {
           if (!bath.exitNotifiedAt) {
@@ -484,10 +492,10 @@ export async function processBathReply(
         note = 'お風呂から上がったかの声かけに 2 回返事なし（家族へ確認のお願い。L4 にはしない）';
         endWith = 'exit_no_answer';
       } else {
-        // 再確認でも「まだ」（判定できない返事も）→ returnAfterMinutes 後に寝室へ戻し、そのとき家族へ info（switchMode）
+        // 再確認でも「まだ」（判定できない返事も）→ 10 分後に寝室へ戻し、そのとき家族へ info（switchMode）
         if (!alerted) { say = 'わかりました。ゆっくりどうぞ。'; expression = 'listen'; }
         const returnReason: BathReturnReason = status === 'not_yet' ? 'exit_not_yet' : 'exit_unclear';
-        bath = await scheduleBathReturn(ctx, hh, { ...bath, returnReason }, now, addMinutes(now, policy.returnAfterMinutes), returnReason);
+        bath = await scheduleBathReturn(ctx, hh, { ...bath, returnReason }, now, addMinutes(now, BATH_EXIT_NOT_YET_RETURN_MINUTES), returnReason);
       }
     }
     await ctx.store.updateHousehold(hh, { bath });
@@ -535,21 +543,16 @@ export async function processBathReply(
 }
 
 /**
- * 歯磨きの声かけ（teeth なら）と「お風呂から上がりましたか？」を積み、時間切れの戻り（/internal/bath-return）を予約する。
- * 「上がりましたか」は歯磨きから returnAfterMinutes 後（歯磨きを積まないときは今から returnAfterMinutes 後）。既に予約してあれば何もしない
+ * 「そろそろお風呂を出ませんか？」を今から exitAfterMinutes 後に積み、時間切れの戻り（/internal/bath-return）を予約する。
+ * 既に予約してあれば何もしない
  */
-async function scheduleTeethAndExit(
-  ctx: AppContext, hh: HouseholdId, bath: BathState, now: Date, policy: BathPolicy, teeth: boolean,
+async function scheduleExit(
+  ctx: AppContext, hh: HouseholdId, bath: BathState, now: Date, policy: BathPolicy,
 ): Promise<BathState> {
   if (bath.returnAt) return bath;
-  let exitAt = addMinutes(now, policy.returnAfterMinutes);
-  if (teeth) {
-    const teethAt = addMinutes(now, policy.teethAfterMinutes);
-    await enqueueBathPrompt(ctx, hh, 'teeth', teethAt);
-    exitAt = addMinutes(teethAt, policy.returnAfterMinutes);
-  }
+  const exitAt = addMinutes(now, policy.exitAfterMinutes);
   await enqueueBathPrompt(ctx, hh, 'exit', exitAt);
-  return scheduleBathReturn(ctx, hh, bath, now, addMinutes(exitAt, BATH_EXIT_TIMEOUT_MINUTES), 'timeout', { teeth, exitAt });
+  return scheduleBathReturn(ctx, hh, bath, now, addMinutes(exitAt, BATH_EXIT_TIMEOUT_MINUTES), 'timeout', { exitAt });
 }
 
 /** 寝室への戻り（/internal/bath-return）を予約し、bath.returnAt を書き換えた bath を返す（保存は呼び出し側） */
