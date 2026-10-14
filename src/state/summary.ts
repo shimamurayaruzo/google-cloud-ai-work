@@ -20,7 +20,7 @@ import { GoogleGenAI } from '@google/genai';
 import { config } from '../config.js';
 import { logError, logEvent } from '../log.js';
 import type { AppContext } from '../services.js';
-import { hm, jaDateLabel } from '../time.js';
+import { hm, jaDateLabel, jstDate } from '../time.js';
 import {
   TASK_LABELS, type Citation, type DateKey, type Day, type DaySummary, type HouseholdId,
   type Notice, type Prompt, type Turn, type TurnId,
@@ -28,6 +28,7 @@ import {
 import { detectL4, detectMildDiscomfort, detectPain, excerpt, isLikelyNotPerson } from '../agent/rules.js';
 import { NotFoundError } from './errors.js';
 import { appendLedger } from './ledger.js';
+import { MORNING_STEP_LABELS, morningPolicyOf, remainingMorningTasks } from './morning.js';
 
 /** 比較に使う過去の日数（criteria 3-4。これに満たない間は基線の収集期間） */
 export const BASELINE_DAYS = 14;
@@ -128,8 +129,12 @@ async function composeSummary(
   ]);
   const callName = household?.person.callName?.trim() || 'ご本人';
 
-  let replies = replyLines(turns);
+  // 朝の流れ（state/morning.ts）の繰り返しの「返事なし」は起こすためのもので、1 回ずつは載せない
+  const morningPromptIds = new Set(prompts.filter(p => p.morningStep).map(p => p.id));
+  let replies = replyLines(turns.filter(t => !(morningPromptIds.has(t.promptId) && t.classified.status === 'no_answer')));
   let concerns = concernLines(notices, turns, prompts);
+  const morningLine = household ? morningUnfinishedLine(day, morningPolicyOf(household).endTime) : null;
+  if (morningLine) concerns = [...concerns, morningLine].sort((a, b) => a.sortAt - b.sortAt);
   const continued = continuedLines(notices, turns, callName);
   const comparison = compareRepeatedQuestions(day, recent, healthSigns(notices, turns));
 
@@ -269,6 +274,23 @@ function concernLines(notices: Notice[], turns: Turn[], prompts: Prompt[]): Line
     out.push({ text: `${hm(at)} 「${q(t.replyText)}」とおっしゃいました。`, turnId: t.id, sortAt: at.getTime() });
   }
   return out.sort((a, b) => a.sortAt - b.sortAt);
+}
+
+/**
+ * 朝の流れが最後まで進まなかったとき（10:30 を過ぎた・お迎えで終えた・まだ続いている）の 1 行。
+ * 残りの工程は「未確認」と書く（docs/03 §5）。全部済んだ日・朝の流れが無かった日は null
+ */
+function morningUnfinishedLine(day: Day, endTime: string): Line | null {
+  const m = day.morning;
+  if (!m || m.result === 'done') return null;
+  const remaining = remainingMorningTasks(day);
+  if (remaining.length === 0) return null;
+  const end = m.finishedAt ? new Date(m.finishedAt) : jstDate(day.date, endTime);
+  const labels = remaining.map(t => TASK_LABELS[t]).join('・');
+  const head = m.step === 1
+    ? '朝の流れを終えました（起こす声かけに、お返事がありませんでした）。'
+    : `朝の流れを「${MORNING_STEP_LABELS[m.step - 1]}」のところで終えました。`;
+  return { text: `${hm(end)} ${head}${labels}は未確認です。`, turnId: null, sortAt: end.getTime() };
 }
 
 /** お知らせの続き: 上限・静かな時間帯で回したお知らせと、判定未確定の返答の原文 */

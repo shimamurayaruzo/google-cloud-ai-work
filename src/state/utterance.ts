@@ -124,7 +124,10 @@ export async function handleUtterance(
       kind = 'chat'; note = '会話';
       const degraded = currentDegraded(await ctx.store.getHealth(hh, date), now);
       const mode = opts.agentMode ?? config.agentMode;
-      if (mode === 'rules' || degraded?.llm === 'rules') {
+      if (household.policy.utteranceChat === false) {
+        // 雑談を止めている世帯: テレビや目覚ましの音に返事をしない（規則で拾うものは上で処理済み）
+        kind = 'ignored'; say = ''; status = 'unclear'; expression = 'think'; note = '雑談は止めている設定';
+      } else if (mode === 'rules' || degraded?.llm === 'rules') {
         say = CHAT_FALLBACK_SAY; expression = 'smile';
       } else {
         try {

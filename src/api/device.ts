@@ -39,6 +39,8 @@ export function promptForDevice(p: Prompt | null) {
     ...(p.expectsReply === false ? { expectsReply: false } : {}),
     // お風呂モードの声かけの段（start / wash / wash_recheck / teeth / end）。字幕を大きく短くする目印
     ...(p.bathStep ? { bathStep: p.bathStep } : {}),
+    // 朝の流れの工程（1 起こす、2 おむつ、3 洗顔・歯磨き、4 着替え）。返事は今までどおり /api/device/reply へ
+    ...(p.morningStep ? { morningStep: p.morningStep } : {}),
   };
 }
 

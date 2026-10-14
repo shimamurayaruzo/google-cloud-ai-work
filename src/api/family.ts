@@ -94,6 +94,7 @@ export const SettingsSchema = z.object({
   name: z.string().min(1).max(60).optional(),
   person: z.object({
     callName: z.string().min(1).max(30).optional(),
+    wakeName: z.string().min(1).max(40).optional(),
     wording: z.record(z.string().max(40), z.string().max(100)).optional(),
   }).optional(),
   plan: z.object({
@@ -115,6 +116,8 @@ export const SettingsSchema = z.object({
     /** 寝室モードの「ときたまの声かけ」の間隔（分。0 で無効。docs/02 §11.2） */
     idleChatMinutes: z.number().int().min(0).max(600).optional(),
     noAnswerUrgent: z.boolean().optional(),
+    utteranceChat: z.boolean().optional(),
+    morning: z.object({ enabled: z.boolean(), startTime: HHMM, endTime: HHMM, wakeRepeatMinutes: z.number().int().min(1).max(30), wakeMaxRepeats: z.number().int().min(1).max(60), stepRepeatMinutes: z.number().int().min(1).max(60), stepMaxRepeats: z.number().int().min(1).max(20), wakeTexts: z.array(z.string().min(1).max(120)).min(1).max(10).optional() }).optional(),
     /** お風呂モードの間隔（分。docs/02 §11.3） */
     bath: z.object({
       washAfterMinutes: z.number().int().min(1).max(120),
@@ -144,9 +147,12 @@ export function buildSettingsPatch(current: Household, input: z.infer<typeof Set
   const patch: Partial<Household> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.person) {
+    // 画面が送らない項目（wakeName など）は今の値を残す
     patch.person = {
+      ...current.person,
       callName: input.person.callName ?? current.person.callName,
       wording: input.person.wording ?? current.person.wording,
+      ...(input.person.wakeName !== undefined ? { wakeName: input.person.wakeName } : {}),
     };
   }
   if (input.plan) {

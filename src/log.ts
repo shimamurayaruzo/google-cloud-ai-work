@@ -6,7 +6,9 @@ export type LedgerEventName =
   | 'kill_switch_on' | 'kill_switch_off' | 'heartbeat_lost' | 'health_incident' | 'health_recovered'
   | 'followup_scheduled' | 'followup_skipped' | 'l4_started' | 'l4_cleared'
   // docs/02 §11（起動モード・本人からの質問・ときたまの声かけ・居場所の登録）
-  | 'mode_changed' | 'utterance_received' | 'idle_chat_sent' | 'whereabouts_updated';
+  | 'mode_changed' | 'utterance_received' | 'idle_chat_sent' | 'whereabouts_updated'
+  // 朝の流れ（docs/03 §5、2026-10-14。state/morning.ts）
+  | 'morning_step' | 'morning_finished';
 
 export function logEvent(event: string, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ severity: 'INFO', event, timestamp: new Date().toISOString(), ...data }));

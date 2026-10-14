@@ -16,6 +16,9 @@ import { defaultPromptText, findPlanItem, inSleepHours, resolvePlan } from './pl
 import { processReply } from './turn.js';
 import { REASSURANCE_SAY } from '../agent/rules.js';
 import { bathNoAnswerMinutes, bathReturnOverdue, maybeIdleChat, modeOf, noteBathPromptDelivered, switchMode } from './mode.js';
+import {
+  closeMorningIfOver, finishMorning, morningActive, morningPolicyOf, nextMorningPrompt, replacedByMorning,
+} from './morning.js';
 
 /** 計画を作るとき、これより前に過ぎた声かけは話さない（expired で作る）。朝の計画が遅れて走ったときの一斉発話を防ぐ */
 const STALE_PLAN_MINUTES = 30;
@@ -81,8 +84,11 @@ export async function planDay(
 
   const household = await requireHousehold(ctx, hh);
   const staleBefore = addMinutes(now, -STALE_PLAN_MINUTES).getTime();
-  // 就寝時間帯（criteria 3-3 ★8）の声かけは作らない
-  const items = day.plan.filter(item => !inSleepHours(household, jstDate(date, item.time)));
+  // 就寝時間帯（criteria 3-3 ★8）の声かけは作らない。
+  // 朝の流れ（policy.morning）の日は、8:00〜10:30 の起床・おむつ・歯磨き・洗顔・着替え・持ち物の時刻ベースの声かけも作らない
+  // （朝の流れが返事を待って順に出す。state/morning.ts）
+  const morning = morningPolicyOf(household);
+  const items = day.plan.filter(item => !inSleepHours(household, jstDate(date, item.time)) && !replacedByMorning(household, item));
   const prompts: Prompt[] = items.map(item => {
     const scheduledAt = jstDate(date, item.time);
     return {
@@ -98,17 +104,24 @@ export async function planDay(
   });
   for (const p of prompts) await ctx.store.putPrompt(p);
 
-  const lines = items.map(i => `${i.time} ${TASK_LABELS[i.task]}`);
+  const lines = items.map(i => ({ time: i.time, text: `${i.time} ${TASK_LABELS[i.task]}` }));
+  if (morning.enabled) {
+    lines.push({ time: morning.startTime, text: `${morning.startTime} 朝の流れ（起こす→おむつ→洗顔・歯磨き→着替え。お返事があってから次へ）` });
+    lines.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  }
   await appendLedger(ctx, {
     hh, date, at: now, kind: 'plan', name: 'plan_proposed',
-    args: { isDayservice: day.isDayservice, items: day.plan.map(i => ({ time: i.time, task: i.task })) },
+    args: {
+      isDayservice: day.isDayservice, items: day.plan.map(i => ({ time: i.time, task: i.task })),
+      ...(morning.enabled ? { morning: { startTime: morning.startTime, endTime: morning.endTime } } : {}),
+    },
   });
   logEvent('plan_proposed', { hh, date, isDayservice: day.isDayservice, count: prompts.length });
 
   try {
     await ctx.familyNotify.notify({
       hh, date, level: 'info', reason: '今日の声かけ計画',
-      evidence: `${day.isDayservice ? 'デイの日' : 'デイ以外の日'}: ${lines.join('、')}`,
+      evidence: `${day.isDayservice ? 'デイの日' : 'デイ以外の日'}: ${lines.map(l => l.text).join('、')}`,
       turnId: null, now,
     });
   } catch (error) {
@@ -140,7 +153,7 @@ export async function enqueuePrompt(
   opts: {
     isRecheck?: boolean; text?: string; at?: Date;
     /** お風呂の段・返事を求めない印など（docs/02 §11） */
-    extra?: Partial<Pick<Prompt, 'bathStep' | 'expectsReply' | 'idleChat'>>;
+    extra?: Partial<Pick<Prompt, 'bathStep' | 'expectsReply' | 'idleChat' | 'morningStep'>>;
   } = {},
 ): Promise<Prompt> {
   const household = await requireHousehold(ctx, hh);
@@ -214,6 +227,7 @@ export async function deliverPrompt(
       promptId: prompt.id, task: prompt.task, isRecheck: prompt.isRecheck, text: prompt.text,
       ...(prompt.isReassurance ? { isReassurance: true } : {}), ...(prompt.followup ? { followup: true } : {}),
       ...(prompt.bathStep ? { bathStep: prompt.bathStep } : {}), ...(prompt.expectsReply === false ? { expectsReply: false } : {}),
+      ...(prompt.morningStep ? { morningStep: prompt.morningStep } : {}),
     },
   });
   if (prompt.bathStep) await noteBathPromptDelivered(ctx, prompt, now);
@@ -229,6 +243,9 @@ export async function deliverPrompt(
  * - お風呂モード（docs/02 §11.3）: お風呂の声かけ（bath / お風呂の歯磨き）と talk だけを出す。寝室の声かけは queued のまま。
  *   お風呂の声かけは家族が切り替えたものなので就寝時間帯でも出す。自動の戻りの時刻を過ぎていれば寝室へ戻す（予約が届かなかったときの保険）
  * - 就寝時間帯（policy.sleepHours）: 通常の声かけは出さない。期限が来た声かけは話さずに expired にする
+ * - 朝の流れ（policy.morning。state/morning.ts）: 寝室モードで startTime〜endTime の間、期限の来た声かけが無ければ、
+ *   朝の流れのいまの工程の声かけを（前回から repeatMinutes 以上たっていれば）作って話す。endTime を過ぎたら・お迎え（pickup）の
+ *   声かけを話したら朝の流れを終える（cutoff）。朝の流れの最中は「ときたまの声かけ」を出さない
  * - 寝室モードで話すものが無ければ、条件がそろったときだけ「ときたまの声かけ」（talk）を 1 つ作る（state/mode.ts）
  * 再確認の声かけで、その項目が既に rechecking でなくなっていれば（済んだ等）話さずに expired にする。
  */
@@ -246,6 +263,8 @@ export async function nextPrompt(ctx: AppContext, hh: HouseholdId, now: Date): P
     household = (await switchMode(ctx, hh, 'bedroom', 'system', now)).household;
   }
   const inBath = modeOf(household) === 'bath';
+  // 朝の流れ: endTime を過ぎていれば、ここで終える（残りは夕方の要約に「未確認」）
+  await closeMorningIfOver(ctx, household, day, now);
 
   let due = await ctx.store.listDuePrompts(hh, date, now);
   // お風呂の間は寝室の声かけを出さない（queued のまま。戻ったとき 30 分以上前のものは expired）。
@@ -260,18 +279,34 @@ export async function nextPrompt(ctx: AppContext, hh: HouseholdId, now: Date): P
     due = due.filter(p => p.bathStep);
     if (due.length === 0) return null;
   }
+  const morningOn = !inBath && !inSleepHours(household, now) && morningPolicyOf(household).enabled;
   for (const p of due) {
     if (p.isReassurance) {
       await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
       continue;
     }
-    if (p.isRecheck && !p.bathStep && day.tasks[p.task]?.state !== 'rechecking') {
+    if (p.isRecheck && !p.bathStep && !p.morningStep && day.tasks[p.task]?.state !== 'rechecking') {
       await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
       continue;
     }
+    // 朝の流れの日に、時刻ベースの朝の声かけが残っていたら（朝の流れを有効にする前に計画を作った等）話さない
+    if (morningOn && !p.morningStep && !p.isRecheck && !p.followup && !p.bathStep && p.expectsReply !== false
+      && replacedByMorning(household, { time: hhmm(p.scheduledAt), task: p.task })) {
+      await ctx.store.updatePrompt(hh, date, p.id, { state: 'expired' });
+      continue;
+    }
+    // お迎えの声かけは時刻どおりに出す。朝の流れが終わっていなければ、ここで終える（docs/03 §5）
+    if (p.task === 'pickup' && morningActive(day)) {
+      await finishMorning(ctx, hh, date, day, 'cutoff', now, 'pickup');
+    }
     return deliverPrompt(ctx, p, now, { synthesize: true });
   }
-  return inBath ? null : maybeIdleChat(ctx, household, day, now);
+  if (inBath) return null;
+  if (morningOn) {
+    const m = await nextMorningPrompt(ctx, household, day, now);
+    if (m.handled) return m.prompt;
+  }
+  return maybeIdleChat(ctx, household, day, now);
 }
 
 /** L4 モードの安心文。直近の安心文（無ければ L4 を立てた時刻）から 3 分以上たっていれば 1 つ作って話す */

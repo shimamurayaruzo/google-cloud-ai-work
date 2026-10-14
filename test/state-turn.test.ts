@@ -51,6 +51,12 @@ async function setup(runner: TurnRunner = new ScriptedRunner(byReply)) {
   return fake;
 }
 
+/** 朝の流れ（policy.morning）を止めた世帯にする（時刻ベースの朝の声かけを確かめるテスト用。2026-10-14） */
+async function disableMorning(fake: Awaited<ReturnType<typeof setup>>) {
+  const h = (await fake.store.getHousehold(HH))!;
+  await fake.store.putHousehold({ ...h, policy: { ...h.policy, morning: { ...h.policy.morning!, enabled: false } } });
+}
+
 async function ask(fake: Awaited<ReturnType<typeof setup>>, task: TaskKey, time: string, isRecheck = false) {
   const now = jstDate(THU, time);
   const p = await enqueuePrompt(fake.ctx, HH, THU, task, { at: now, isRecheck });
@@ -253,8 +259,9 @@ test('運用エージェントが llm=rules に切り替えている間は ctx.t
   assert.equal(r.turn.classified.by, 'rules');
 });
 
-test('planDay → nextPrompt: 計画を積み、家族へ info、期限の来た先頭を delivered にして TTS を試す', async () => {
+test('planDay → nextPrompt: 計画を積み、家族へ info、期限の来た先頭を delivered にして TTS を試す（朝の流れを止めた世帯）', async () => {
   const fake = await setup();
+  await disableMorning(fake);
   const { prompts } = await planDay(fake.ctx, HH, THU, jstDate(THU, '06:00'));
   assert.equal(prompts.length, 11);
   assert.ok(prompts.every(p => p.state === 'queued'));
@@ -281,8 +288,9 @@ test('planDay → nextPrompt: 計画を積み、家族へ info、期限の来た
   assert.equal(day.signals.noAnswerCount, 2);
 });
 
-test('planDay が遅れて走ったら、30 分以上前の声かけは expired で作る', async () => {
+test('planDay が遅れて走ったら、30 分以上前の声かけは expired で作る（朝の流れを止めた世帯）', async () => {
   const fake = await setup();
+  await disableMorning(fake);
   const { prompts } = await planDay(fake.ctx, HH, THU, jstDate(THU, '12:00'));
   assert.equal(prompts.find(p => p.task === 'greeting')!.state, 'expired');
   assert.equal(prompts.find(p => p.task === 'lunch')!.state, 'queued');

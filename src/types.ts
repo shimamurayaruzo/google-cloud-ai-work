@@ -84,6 +84,8 @@ export interface Household {
   timezone: 'Asia/Tokyo';
   person: {
     callName: string;
+    /** 起こすときに呼ぶ名前（例「島村かよこさん」）。未設定なら callName */
+    wakeName?: string;
     /** 呼び方の決まり。プロンプトにそのまま埋める */
     wording: Record<string, string>;
   };
@@ -108,8 +110,13 @@ export interface Household {
     /** 返事なしが 3 回続いたとき至急（L4）にするか。false なら確認のお願い（L3）止まりで L4 モードに入らない。
      *  昼寝が日常の人向け（2026-10-13 家族の判断）。既定 true（criteria 3-3） */
     noAnswerUrgent?: boolean;
+    /** 声かけ以外の発話に Gemini が雑談で返すか。false なら規則（居場所・薬・至急・痛み・外部連絡）だけで、それ以外は返事をしない。
+     *  テレビや目覚ましの音に反応してしまう世帯向け（2026-10-14）。既定 true */
+    utteranceChat?: boolean;
     /** お風呂モードの間隔（分。docs/02 §11.3）。既定 10 / 15 / 10 / 2 / 5 */
     bath?: BathPolicy;
+    /** 朝の流れ（モーニング・シーケンス。docs/03 §5、2026-10-14）。未設定なら既定（enabled: true、08:00〜10:30、起こす 1 分×60 回、ほか 5 分×6 回） */
+    morning?: MorningPolicy;
   };
   /** 通知文に書く連絡先（report-design 2 節）。未設定なら該当の文を省く。住所・持病はここに置かない */
   contacts?: {
@@ -127,6 +134,49 @@ export interface Household {
   whereabouts?: Whereabouts | null;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/**
+ * 朝の流れ（docs/03 §5、2026-10-14 家族の要望）。startTime から、起こす → おむつ → 洗顔・歯磨き → 着替え を
+ * 本人の返事があってから順に進める。返事が無ければ同じ声かけを繰り返す（段階表 L3/L4 の対象外）
+ */
+export interface MorningPolicy {
+  enabled: boolean;
+  /** 朝の流れを始める時刻 "HH:MM"（既定 08:00） */
+  startTime: string;
+  /** これを過ぎたら朝の流れを終える "HH:MM"（既定 10:30。残りは夕方の要約に「未確認」） */
+  endTime: string;
+  /** 起こす声かけの間隔（分。既定 1） */
+  wakeRepeatMinutes: number;
+  /** 起こす声かけの上限（回。既定 60 = 60 分ぶん） */
+  wakeMaxRepeats: number;
+  /** 工程②〜④の声かけの間隔（分。既定 5） */
+  stepRepeatMinutes: number;
+  /** 工程②〜④の声かけの上限（回。既定 6） */
+  stepMaxRepeats: number;
+  /**
+   * 起こす声かけの文言（緊迫感のある言い方。1 回目から順に使い、最後まで行ったら最初に戻る）。
+   * {name} は person.wakeName（無ければ callName）、{hour} はその時刻の「時」（例 8）に置き換える。省略時は state/morning.ts の既定 3 つ
+   */
+  wakeTexts?: string[];
+}
+
+/** その日の朝の流れの進み具合（state/morning.ts） */
+export interface DayMorning {
+  /** いまの工程 1〜4（1 起こす、2 おむつ、3 洗顔・歯磨き、4 着替え） */
+  step: number;
+  startedAt: Date;
+  /** いまの工程の声かけを最後に話した時刻 */
+  stepAskedAt?: Date;
+  /** いまの工程の声かけを話した回数（工程が進むと 0） */
+  repeats: number;
+  /** いまの工程で、上限に達して家族へ確認のお願い（check）を送った */
+  notified?: boolean;
+  /** そのお願いの通知。家族が「確認した」を押したら、同じ工程の声かけをもう一度始める */
+  noticeId?: NoticeId;
+  finishedAt?: Date;
+  /** done … 全工程に返事、cutoff … endTime を過ぎた・お迎えの声かけで終えた、timeout … 予約（今は使わない） */
+  result: 'done' | 'timeout' | 'cutoff' | null;
 }
 
 // ---- 起動モード・居場所（docs/02 §11） ----
@@ -258,6 +308,8 @@ export interface Day {
   signals: DaySignals;
   /** L4 モード。家族の「確認した」で null に戻る */
   l4?: DayL4 | null;
+  /** 朝の流れ（policy.morning）。始まる前は無い */
+  morning?: DayMorning;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -287,6 +339,8 @@ export interface Prompt {
   bathStep?: BathStep;
   /** 寝室モードの「ときたまの声かけ」（docs/02 §11.2） */
   idleChat?: boolean;
+  /** 朝の流れの工程 1〜4（state/morning.ts）。返事は朝の流れで扱い、段階表（L3/L4）には乗せない */
+  morningStep?: number;
 }
 
 /**
@@ -453,6 +507,8 @@ export interface ScenarioTurn {
   reply?: string | null;
   /** このステップの前に起動モードを切り替える（家族の操作として。docs/02 §11） */
   mode?: HouseholdMode;
+  /** true なら、朝の流れのいまの工程の声かけに返事する（task は朝の流れが決める。state/replay.ts） */
+  morning?: true;
   /** 杉浦さんの基準の期待値。mode はそのステップの後の起動モード */
   expect?: { status?: Classification; notify?: NoticeLevel; mode?: HouseholdMode };
 }

@@ -6,6 +6,8 @@
 //  - 至急の通知（L4 の語、3 回続けて返事なし）を作ったターンで L4 モード（day.l4）を立てる（state/l4.ts）
 //  - L4 モード中の返事は LLM を呼ばず、台帳と通知の根拠に追記するだけ（質問しない。一言は安心文）
 //  - 痛みの言葉は 3 時間後の聞き直し（followup）を予約する。聞き直しへの返事は規則で扱う
+//  - 朝の流れ（prompt.morningStep。state/morning.ts）の声かけへの返事は、分類と L4・痛みの通知はいつもどおりだが、
+//    段階表（L2/L3/L4）と再確認の予約には乗せず、朝の流れの工程を進める／同じ工程で待つ
 
 import { logError, logEvent } from '../log.js';
 import type { AppContext, Intent, NotifyRequest, TurnInput, TurnOutcome } from '../services.js';
@@ -25,6 +27,7 @@ import { currentL4, startL4 } from './l4.js';
 import { canRecheck, transition, type StageNotice } from './machine.js';
 import { defaultPromptText, findPlanItem, inSleepHours, recheckIntervalMinutes } from './plan.js';
 import { processBathReply } from './mode.js';
+import { MORNING_AWAKE_SAY, applyMorningReply } from './morning.js';
 import { handleUtterance } from './utterance.js';
 
 export { NotFoundError };
@@ -97,7 +100,9 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
   }
 
   const item = findPlanItem(day.plan, task, prompt.scheduledAt);
-  const recheckAllowed = !household.killSwitch && canRecheck(household, day.tasks[task]) && item?.recheckMinutes !== 0;
+  // 朝の流れの声かけは、繰り返しを朝の流れ（state/morning.ts）が決める。再確認の予約はしない
+  const morning = prompt.morningStep != null && !household.killSwitch;
+  const recheckAllowed = !morning && !household.killSwitch && canRecheck(household, day.tasks[task]) && item?.recheckMinutes !== 0;
   const approvals = await ctx.store.listApprovals(hh);
   const familyApprovedShare = approvals.some(a =>
     a.kind === 'share_external' && a.decision === 'approved' && a.decidedAt != null && dateKey(a.decidedAt) === date);
@@ -158,6 +163,10 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
     expression = 'worry';
   } else if (applied.finalStage) {
     say = FINAL_SAY;
+  } else if (applied.morningAwake) {
+    // 起こす声かけに返事があった（「まだ眠い」等でも起きたとみなす）。次の工程の声かけはすぐ届く
+    say = MORNING_AWAKE_SAY;
+    expression = 'smile';
   }
   if (say !== turn.say || expression !== turn.expression) {
     turn.say = say;
@@ -169,7 +178,8 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
   const signals = { ...day.signals };
   const status = outcome.classified.status;
   if (status === 'unclear') signals.unclearCount += 1;
-  if (status === 'no_answer') signals.noAnswerCount += 1;
+  // 朝の流れの繰り返しは起こすためのもので、無反応の記録には数えない
+  if (status === 'no_answer' && !morning) signals.noAnswerCount += 1;
   signals.urgentCount += applied.notices.filter(n => n.level === 'urgent').length;
   if (isRepeatedQuestion(replyText, todayTurns, now)) signals.repeatedQuestions += 1;
   await ctx.store.updateDay(hh, date, { signals });
@@ -181,6 +191,7 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
       status, note: outcome.classified.note, by: outcome.classified.by,
       confidence: outcome.classified.confidence ?? null, uncertain: outcome.classified.uncertain ?? false,
       degraded: outcome.degraded?.reason ?? null, taskState: applied.taskState, stage: applied.stage ?? null,
+      ...(prompt.morningStep ? { morningStep: prompt.morningStep } : {}),
     },
   });
   if (outcome.degraded) {
@@ -238,6 +249,8 @@ interface ApplyResult {
   finalStage?: boolean;
   /** L4 を立てた由来（l4_words / fire / no_answer） */
   l4Started?: string;
+  /** 朝の流れの起こす声かけに、済み以外の返事（「まだ眠い」等）で起きたとみなした */
+  morningAwake?: boolean;
 }
 
 async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult> {
@@ -258,6 +271,7 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
     return { followUp: null, notices, taskState: next.state };
   }
 
+  const morning = prompt.morningStep != null;
   const notifyIntents = outcome.intents.filter((i): i is Extract<Intent, { type: 'notify' }> => i.type === 'notify');
   // L4 の語・痛みを訴えたターンは、同じ確認を繰り返さず段階表の通知も重ねない（その通知を優先する）
   const alerted = notifyIntents.some(i => i.level === 'urgent' || i.origin === 'pain');
@@ -281,9 +295,10 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
       at: now,
       evidence: a.replyText ? excerpt(a.replyText, EVIDENCE_MAX) ?? undefined : undefined,
       turnId,
-      recheckAllowed: isPromptTask ? a.recheckAllowed && !alerted : false,
-      escalateAllowed: item?.escalate !== false && !alerted,
-      oneShot: isPromptTask && item?.recheckMinutes === 0,
+      recheckAllowed: isPromptTask ? a.recheckAllowed && !alerted && !morning : false,
+      // 朝の流れの声かけは段階表の通知を出さない（繰り返しと家族へのお願いは state/morning.ts）
+      escalateAllowed: item?.escalate !== false && !alerted && !(morning && isPromptTask),
+      oneShot: isPromptTask && !morning && item?.recheckMinutes === 0,
       promptedAt: prompt.deliveredAt ?? prompt.scheduledAt,
       task: r.task,
       noAnswerUrgent: household.policy.noAnswerUrgent !== false,
@@ -302,13 +317,25 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
     }
   }
 
+  // ---- 朝の流れ: 工程を進める／同じ工程で待つ。上限で家族へ check を 1 回（段階表は使わない） ----
+  let morningAwake = false;
+  if (morning) {
+    const mr = await applyMorningReply(ctx, {
+      household, day, prompt, tasks, status: outcome.classified.status, replyText: a.replyText, turnId, now,
+    });
+    notices.push(...mr.notices);
+    morningAwake = mr.advanced && prompt.morningStep === 1 && outcome.classified.status !== 'done' && !alerted;
+  }
+
   // ---- 再確認: この声かけの項目が今のターンで rechecking に入ったときだけ予約する ----
   // 時刻は状態機械側が決める（返事なしは 15 分、予定の無い日のまだは 30 分、デイの日はお迎えから逆算）。
   // criteria v2 の間隔を守るため、エージェントの minutes は台帳に残すだけで使わない
   const after = tasks[task];
   const recheckIntent = outcome.intents.find((i): i is Extract<Intent, { type: 'recheck' }> => i.type === 'recheck');
-  const enteredRecheck = after?.state === 'rechecking' && (after.recheckCount > (before?.recheckCount ?? 0));
-  if (enteredRecheck) {
+  const enteredRecheck = !morning && after?.state === 'rechecking' && (after.recheckCount > (before?.recheckCount ?? 0));
+  if (morning) {
+    // 朝の流れの繰り返しは nextPrompt が出す（エージェントの再確認の予約は使わない）
+  } else if (enteredRecheck) {
     const status = after.status ?? outcome.classified.status;
     const planned = recheckIntervalMinutes(household, a.item, task, status, day.isDayservice, now);
     const minutes = planned;
@@ -336,6 +363,8 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
     if (i.type === 'notify') {
       // 段階表が既に家族へ知らせたターンは、同じ趣旨（取れない）の check / info を重ねない
       if (stage && i.level !== 'urgent' && (!i.origin || i.origin === 'other' || i.origin === 'not_done')) continue;
+      // 朝の流れの声かけでは「取れない」趣旨の通知を出さない（上限のお願いは朝の流れが 1 回だけ出す）
+      if (morning && i.level !== 'urgent' && (!i.origin || i.origin === 'other' || i.origin === 'not_done' || i.origin === 'no_answer')) continue;
       const n = await safeNotify(ctx, {
         hh, date, level: i.level, reason: i.reason, evidence: i.evidence, turnId, task, now,
         ...(i.origin ? { origin: i.origin } : {}), ...(uncertain ? { uncertain } : {}),
@@ -380,6 +409,7 @@ async function applyIntents(ctx: AppContext, a: ApplyArgs): Promise<ApplyResult>
     ...(stage ? { stage: stage.stage } : {}),
     ...(finalStage ? { finalStage } : {}),
     ...(l4Started ? { l4Started } : {}),
+    ...(morningAwake ? { morningAwake } : {}),
   };
 }
 
