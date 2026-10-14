@@ -8,11 +8,12 @@
 import type { AppContext, Intent } from '../services.js';
 import { hhmm, jstDate } from '../time.js';
 import type {
-  Classification, DateKey, DaySummary, HouseholdId, HouseholdMode, Notice, Scenario, ScenarioTurn, TaskKey,
+  Classification, DateKey, DaySummary, HouseholdId, HouseholdMode, Notice, Prompt, Scenario, ScenarioTurn, TaskKey,
 } from '../types.js';
 import { demoHousehold } from '../seed/household.js';
 import { deliverPrompt, enqueuePrompt, ensureDay } from './day.js';
 import { handleBathReturn, modeOf, switchMode } from './mode.js';
+import { askMorningForReplay } from './morning.js';
 import { defaultPromptText } from './plan.js';
 import { buildSummary } from './summary.js';
 import { processReply } from './turn.js';
@@ -38,6 +39,8 @@ export interface ReplayStep {
   mode?: HouseholdMode;
   /** kind=mode のとき、誰が切り替えたか */
   modeBy?: 'family' | 'system';
+  /** 朝の流れの声かけだったとき、その工程（1〜4） */
+  morningStep?: number;
 }
 
 export interface ReplayResult {
@@ -118,20 +121,30 @@ export async function runScenario(
         continue;
       }
     }
-    if (!t.task) continue;
-    const task = t.task;
     const reply = t.reply ?? null;
     const day = await ensureDay(ctx, hh, date);
-    const rechecking = day.tasks[task]?.state === 'rechecking';
-    // 痛みの聞き直し・L4 の安心文・返事を求めない声かけ（お風呂の最初の一言など）は台本の声かけとは別なので使わない
-    const queued = (await ctx.store.listPrompts(hh, date))
-      .find(p => p.task === task && p.state === 'queued' && !p.followup && !p.isReassurance && p.expectsReply !== false);
-    const prompt = queued ?? await enqueuePrompt(ctx, hh, date, task, {
-      isRecheck: rechecking,
-      text: rechecking ? defaultPromptText(task, household, true) : undefined,
-      at: now,
-    });
-    const delivered = await deliverPrompt(ctx, prompt, now, { synthesize: false });
+    let delivered: Prompt;
+    if (t.morning) {
+      // 朝の流れ（state/morning.ts）: いまの工程の声かけ（間隔・上限は見ない）に返事する。task は朝の流れが決める
+      const current = (await ctx.store.getHousehold(hh)) ?? household;
+      const p = await askMorningForReplay(ctx, current, day, now);
+      if (!p) continue;   // 朝の流れは終わっている
+      delivered = p;
+    } else {
+      if (!t.task) continue;
+      const task = t.task;
+      const rechecking = day.tasks[task]?.state === 'rechecking';
+      // 痛みの聞き直し・L4 の安心文・返事を求めない声かけ（お風呂の最初の一言など）は台本の声かけとは別なので使わない
+      const queued = (await ctx.store.listPrompts(hh, date))
+        .find(p => p.task === task && p.state === 'queued' && !p.followup && !p.isReassurance && p.expectsReply !== false);
+      const prompt = queued ?? await enqueuePrompt(ctx, hh, date, task, {
+        isRecheck: rechecking,
+        text: rechecking ? defaultPromptText(task, household, true) : undefined,
+        at: now,
+      });
+      delivered = await deliverPrompt(ctx, prompt, now, { synthesize: false });
+    }
+    const task = delivered.task;
     const res = await processReply(ctx, {
       hh, date, promptId: delivered.id, replyText: reply, source: 'replay', now,
     });
@@ -151,6 +164,7 @@ export async function runScenario(
       turnId: res.turn.id,
       kind: 'turn',
       mode: modeOf(after),
+      ...(delivered.morningStep ? { morningStep: delivered.morningStep } : {}),
     };
     judge(step, t.expect, status, res.notices);
     steps.push(step);

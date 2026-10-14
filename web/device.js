@@ -72,11 +72,22 @@
     try {
       var v = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
       if (v && typeof v.hh === 'string' && typeof v.token === 'string' && v.hh && v.token) return { hh: v.hh, token: v.token };
+      // localStorage に無ければ Cookie の予備から戻す
+      var m = document.cookie.split('; ').filter(function (x) { return x.indexOf(LS_KEY + '=') === 0; }).map(function (x) { return [null, x.slice(LS_KEY.length + 1)]; })[0];
+      if (m) {
+        var w = JSON.parse(decodeURIComponent(m[1]));
+        if (w && typeof w.hh === 'string' && typeof w.token === 'string' && w.hh && w.token) {
+          try { localStorage.setItem(LS_KEY, JSON.stringify({ hh: w.hh, token: w.token })); } catch (e2) { /* 無視 */ }
+          return { hh: w.hh, token: w.token };
+        }
+      }
     } catch (e) { /* 保存できない環境でも動く */ }
     return null;
   }
   function saveCfg(c) {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ hh: c.hh, token: c.token })); } catch (e) { /* 保存できなくてもこの画面の間は使う */ }
+    // localStorage が消えたとき（Safari の保護機能など）のための予備: Cookie にも 1 年保存する
+    try { document.cookie = LS_KEY + '=' + encodeURIComponent(JSON.stringify({ hh: c.hh, token: c.token })) + '; Max-Age=31536000; Path=/; SameSite=Strict' + (location.protocol === 'https:' ? '; Secure' : ''); } catch (e) { /* 無視 */ }
   }
 
   var cfg = loadCfg();

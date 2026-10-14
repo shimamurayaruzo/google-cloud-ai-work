@@ -127,7 +127,7 @@ export class FirestoreStore implements Store {
     // 日が無ければ update が NOT_FOUND で throw する（先に putDay）
     await this.dayRef(hh, date).update({ [`tasks.${task}`]: plain(record), updatedAt: new Date() });
   }
-  async updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice' | 'l4'>>): Promise<void> {
+  async updateDay(hh: HouseholdId, date: DateKey, patch: Partial<Pick<Day, 'planApproved' | 'summary' | 'signals' | 'plan' | 'isDayservice' | 'l4' | 'morning'>>): Promise<void> {
     await this.dayRef(hh, date).update(plain({ ...patch, updatedAt: new Date() }));
   }
   async listRecentDays(hh: HouseholdId, beforeDate: DateKey, count: number): Promise<Day[]> {

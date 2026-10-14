@@ -31,13 +31,15 @@ const ScenarioSchema = z.object({
     reply: z.string().max(500).nullable().optional(),
     /** このステップの前に起動モードを切り替える（docs/02 §11） */
     mode: z.enum(['bedroom', 'bath']).optional(),
+    /** 朝の流れのいまの工程の声かけに返事する（task は省ける。state/replay.ts） */
+    morning: z.literal(true).optional(),
     expect: z.object({
       status: z.enum(['done', 'not_yet', 'no_answer', 'unclear']).optional(),
       notify: z.enum(['urgent', 'check', 'info']).optional(),
       mode: z.enum(['bedroom', 'bath']).optional(),
     }).optional(),
-  }).refine(t => t.mode !== undefined || (t.task !== undefined && t.reply !== undefined), {
-    message: 'task と reply を書いてください（mode だけのステップは task を省けます）',
+  }).refine(t => t.mode !== undefined || ((t.task !== undefined || t.morning === true) && t.reply !== undefined), {
+    message: 'task と reply を書いてください（mode だけのステップ・morning: true のステップは task を省けます）',
   })).min(1).max(100),
 });
 

@@ -55,6 +55,11 @@ Cloud Run 1 サービスのパスごとの約束です。設計の元は `docs/0
 - 受け取った声かけは「話した」扱いになります。同じ `id` をもう一度読み上げないでください。
 - L4 モード（至急の通知のあと。下の `today` の `l4`）の間は、通常の声かけは来ず、3 分ごとに安心の一文だけが `"isReassurance": true` 付きで来ます。質問ではないので、読み上げたら返事を待たなくてかまいません（返事を送っても判定はされず、記録に残るだけです）。
 - 就寝時間帯（設定の `policy.sleepHours`、既定 21:30〜07:30）は声かけが来ません。
+- 朝の流れ（2026-10-14。設定の `policy.morning`、既定 8:00〜10:30。docs/03 §5）の声かけには `"morningStep"`（1 起こす／2 おむつ／3 洗顔・歯磨き／4 着替え）が付きます。返事はいつもどおり `POST /api/device/reply` へ送ってください（`noAnswer: true` も同じ）。返事があるまで同じ工程の声かけが繰り返し来ます（起こすのは 1 分おき、ほかは 5 分おき）。
+
+```json
+{ "prompt": { "id": "pr_m1w01", "task": "greeting", "text": "島村かよこさん！ おはようございます。朝の 8 時です。起きてください", "expression": "smile", "morningStep": 1 } }
+```
 
 ```json
 { "prompt": { "id": "pr_m1r01", "task": "water", "text": "ご家族に連絡しました。無理に立ち上がらず、そのままお待ちください。", "expression": "worry", "isReassurance": true } }
@@ -166,6 +171,7 @@ Cloud Run 1 サービスのパスごとの約束です。設計の元は `docs/0
 - `notices[*].falseAlarm` は家族が「誤報だった」を付けた通知で `true`。`notices[*].uncertain` は AI の判定が未確定のまま送った通知で `true`。
 - `turns[*].classified.confidence`（0〜1）と `uncertain`（0.7 未満で `true`）。`turns[*].kind` は `normal` / `followup`（痛みの聞き直しへの返事）/ `l4`（L4 モード中の返事。判定しない）/ `utterance`（本人からの発話。`task` は `talk`、`utteranceKind` は下の 6 節の `kind`。夕方の「お返事の記録」には載りません）。
 - `l4`（`day.l4` と同じ）は L4 モードのあいだ `{ "noticeId", "since", "task", "reason", "origin" }`、それ以外は `null`。立っている間は通常の声かけを止め、3 分ごとに安心文だけを流します。該当の通知を「確認した」（または「誤報だった」）にすると、その場で解除されます（台帳 `l4_cleared`）。
+- `day.morning` は朝の流れの進み具合（始まる前・朝の流れを止めた世帯では無い）: `{ "step": 2, "startedAt": "…", "stepAskedAt": "…", "repeats": 1, "notified": false, "noticeId": "nt_…", "finishedAt": "…", "result": null }`。`step` はいまの工程（1 起こす／2 おむつ／3 洗顔・歯磨き／4 着替え）、`repeats` はいまの工程で声をかけた回数、`notified` は上限に達して家族へ確認のお願いを送ったか、`result` は `null`（続いている）/ `done`（全工程に返事）/ `cutoff`（10:30 を過ぎた・9:00 のお迎えで終えた）/ `timeout`（予約。今は使わない）。`prompts[*].morningStep` は朝の流れの声かけの工程。
 - `day.summary.sections` は「今日の様子」の構造（report-design v2 1 節の型）。キーは `heading` / `conclusion` / `replies`（お返事の記録）/ `concerns`（気になったこと）/ `continued`（お知らせの続き）/ `comparison`（昨日までとの比較）/ `about`（この記録について）。各行に箇条書きの「・」は付いていません。`sentences` は見出しと「・」付きの行を順に並べたもので、`citations[].sentenceIndex` はこの並びの番号です。
 - `health` は無ければ `null`。
 
