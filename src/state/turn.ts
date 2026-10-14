@@ -116,7 +116,9 @@ export async function processReply(ctx: AppContext, args: ProcessReplyArgs): Pro
   };
   // 運用エージェントが LLM を規則へ切り替えている間は、規則だけで分類する（docs/02 §7）
   const degraded = currentDegraded(await ctx.store.getHealth(hh, dateKey(now)), now);
-  const runner = degraded?.llm === 'rules' ? rulesRunner() : ctx.turnRunner;
+  // 朝の流れの返事（起きた／替えた／まだ 等）は規則で十分に判定でき、LLM の遅延（夜間に 15〜20 秒）を母に待たせないよう規則で分類する。
+  // 至急・痛みの語も規則側で拾う
+  const runner = (degraded?.llm === 'rules' || morning) ? rulesRunner() : ctx.turnRunner;
   let outcome: TurnOutcome;
   try {
     outcome = await runner.run(input);
