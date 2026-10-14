@@ -94,7 +94,7 @@ async function isUp(url: string): Promise<boolean> {
 }
 
 async function startServer(): Promise<void> {
-  if (await isUp(`${BASE}/healthz`)) throw new Error(`ポート ${PORT} で何かが動いています。止めてからやり直してください`);
+  if (await isUp(`${BASE}/ping`)) throw new Error(`ポート ${PORT} で何かが動いています。止めてからやり直してください`);
   mkdirSync(join(ROOT, 'tmp/video'), { recursive: true });
   const logFile = createWriteStream(join(ROOT, 'tmp/video/server.log'));
   const env: NodeJS.ProcessEnv = {
@@ -114,7 +114,7 @@ async function startServer(): Promise<void> {
   server.stderr!.pipe(logFile);
   server.on('exit', code => { if (code !== null && code !== 0) console.error(`[record] サーバーが止まりました（code ${code}）。tmp/video/server.log を見てください`); server = null; });
   for (let i = 0; i < 60; i++) {
-    if (await isUp(`${BASE}/healthz`)) { log('サーバー起動', BASE); return; }
+    if (await isUp(`${BASE}/ping`)) { log('サーバー起動', BASE); return; }
     if (!server) break;
     await sleep(500);
   }
@@ -316,21 +316,47 @@ async function runStep(step: Step, rec: Rec): Promise<void> {
       rec.marks[String(s.name)] = (Date.now() - rec.t0) / 1000;
       return;
     case 'poll': {
-      // 母側画面の「次の声かけを取りに行く」（5 秒ごと）を今すぐ動かす。進んだ分はサーバーの時計も合わせる
+      // 母側画面の「次の声かけを取りに行く」（5 秒ごと）を今すぐ動かす。進んだ分はサーバーの時計も合わせる。
+      // ms を大きくすると、その間の画面のタイマーも進む（例: 61000 で返事待ち 60 秒が切れて「返事なし」が送られる）
       const p = needPage();
-      await p.clock.fastForward(5000);
+      await p.clock.fastForward(Number(s.ms ?? 5000));
       await setServerClock(await pageNow(p));
       return;
     }
     case 'heartbeat':
       await needPage().evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
       return;
-    case 'waitText':
-      await needPage().waitForFunction(([sel, text]) => {
+    case 'waitText': {
+      const p = needPage();
+      const shown = ([sel, text]: readonly [string, string]) => {
         const el = document.querySelector(sel);
         return !!el && !el.closest('[hidden]') && !el.closest('.hidden') && (el.textContent ?? '').includes(text);
-      }, [String(s.selector), String(s.text)] as const, { timeout: Number(s.timeout ?? 20000) });
+      };
+      const args = [String(s.selector), String(s.text)] as const;
+      const timeout = Number(s.timeout ?? 20000);
+      if (!s.poll) {
+        await p.waitForFunction(shown, args, { timeout });
+        return;
+      }
+      // poll: true … 出るまで、母側画面の取り出し（poll と同じ。画面の時計を 5 秒進めてサーバーを合わせる）を繰り返す。
+      // 返事の送信や読み上げの直後は、1 回の poll では取り出しが空振りすることがある（5 秒後の次の取り出しを待たないため）
+      const until = Date.now() + timeout;
+      for (;;) {
+        if (await p.evaluate(shown, args)) return;
+        if (Date.now() > until) throw new Error(`waitText: ${args[0]} に「${args[1]}」が出ません`);
+        await p.clock.fastForward(5000);
+        await setServerClock(await pageNow(p));
+        try { await p.waitForFunction(shown, args, { timeout: 700 }); return; } catch { /* もう一度 */ }
+      }
+    }
+    case 'ackNotice': {
+      // 家族が通知を「確認した」にしたことにする（今日の通知から reason が一致する最後のもの）
+      const today = await api('family', 'GET', '/api/family/today') as { notices: Array<{ id: string; reason: string }> };
+      const n = [...today.notices].reverse().find(x => x.reason === String(s.reason));
+      if (!n) throw new Error(`通知「${s.reason}」が見つかりません`);
+      await api('family', 'POST', `/api/family/notices/${encodeURIComponent(n.id)}/ack`, {});
       return;
+    }
     case 'waitHidden':
       await needPage().waitForSelector(String(s.selector), { state: 'hidden', timeout: Number(s.timeout ?? 20000) });
       return;
