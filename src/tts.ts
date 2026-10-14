@@ -70,7 +70,7 @@ export function createTts(opts: TtsOptions = {}): Tts {
     const [res] = await withTimeout(c.synthesizeSpeech({
       input: { text },
       voice: { languageCode: 'ja-JP', name: voice },
-      audioConfig: { audioEncoding: 'MP3', speakingRate: 0.95 },
+      audioConfig: { audioEncoding: 'MP3', speakingRate: 0.95, volumeGainDb: Math.max(-96, Math.min(16, config.ttsGainDb)) },
     }), timeoutMs);
     if (!res?.audioContent || res.audioContent.length === 0) throw new Error('音声が空でした');
     return `data:audio/mp3;base64,${toBase64(res.audioContent)}`;
