@@ -432,6 +432,8 @@ export function createFamilyNotify(deps: FamilyNotifyDeps): FamilyNotify {
     if (n.level !== req.level || !ACTIVE_STATES.has(n.state)) return false;
     // 由来が違えば別の通知（例: 同じ帰宅の項目で「痛み」と「連絡の依頼」）
     if ((n.origin ?? 'other') !== (req.origin ?? 'other')) return false;
+    // お知らせ（info）は内容が違えば別の通知（例: お風呂の「体を洗う」と「お風呂を出た」は同じ項目だが両方送る）
+    if (req.level === 'info' && n.reason !== req.reason) return false;
     // 項目があれば項目で、無ければ（端末の沈黙など）reason で同じものとみなす
     return req.task ? n.task === req.task : !n.task && n.reason === req.reason;
   }
