@@ -32,7 +32,7 @@ test('cloud: 成功なら data URL（MP3）', async () => {
   assert.deepEqual(c.lastRequest, {
     input: { text: 'こんにちは' },
     voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-    audioConfig: { audioEncoding: 'MP3', speakingRate: 0.95 },
+    audioConfig: { audioEncoding: 'MP3', speakingRate: 0.95, volumeGainDb: 6 },
   });
 });
 
