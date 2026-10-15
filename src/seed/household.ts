@@ -110,6 +110,7 @@ export function demoHousehold(): Household {
   return {
     ...defaultHousehold('hh_demo'),
     name: 'テスト世帯',
+    person: { ...defaultHousehold('hh_demo').person, wakeName: 'お母さん' }, // 起こす声かけで呼ぶ名前（デモ動画では本名を出さない）
     members: [{ id: 'mem_demo_1', name: 'はなこ', order: 1, waitMinutes: 10 }],
   };
 }
