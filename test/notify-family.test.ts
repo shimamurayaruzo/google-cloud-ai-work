@@ -80,6 +80,18 @@ test('同じ日・同じ項目・同じ level の open/waiting があれば新�
   assert.equal(store.notices.size, 2);
 });
 
+test('お知らせ（info）は同じ項目でも文言が違えば両方送る（お風呂の「体を洗う」と「お風呂を出た」）', async () => {
+  const { store, notifier, fn } = setup();
+  const wash = await fn.notify(req({ level: 'info', task: 'bath', reason: '体を洗う', origin: 'bath', now: jst(DATE, '19:45') }));
+  const exit = await fn.notify(req({ level: 'info', task: 'bath', reason: 'お風呂を出た', origin: 'bath', now: jst(DATE, '20:00') }));
+  assert.notEqual(exit.id, wash.id);
+  assert.equal(store.notices.size, 2);
+  assert.equal(notifier.sent.length, 2);
+  // 同じ文言ならまとめる
+  const again = await fn.notify(req({ level: 'info', task: 'bath', reason: '体を洗う', origin: 'bath', now: jst(DATE, '20:05') }));
+  assert.equal(again.id, wash.id);
+});
+
 test('ack で acked になり、台帳に notice_acked（actor member:）', async () => {
   const { store, fn } = setup();
   const n = await fn.notify(req());
